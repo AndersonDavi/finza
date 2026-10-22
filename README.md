@@ -8,89 +8,124 @@ Proyecto universitario: *"Finza: Aplicación móvil para la gestión y control d
 las finanzas personales mediante el seguimiento de ingresos, gastos, facturas y
 metas de ahorro"*.
 
-No usa backend ni cuenta: todo se guarda en el teléfono (SQLite). No se
-distribuye por Play Store: se instala el APK desde este repo y la app avisa
-sola cuando hay una versión nueva.
+No tiene backend. Los datos viven en el teléfono (SQLite) y, si conectas tu
+cuenta de Google, se sincronizan con un archivo en tu propio Google Drive. No
+se distribuye por Play Store: el APK se publica en este repo y la app se
+actualiza sola.
 
-Más contexto del proyecto (decisiones, incidencias resueltas, próximos pasos)
-en [`Contexto_Finza.md`](Contexto_Finza.md).
+**Antes de cambiar la app, leer [`ARCHITECTURE.md`](ARCHITECTURE.md):**
+estructura, flujo de datos, sincronización y reglas de negocio.
+Contexto del proyecto (decisiones, incidencias, próximos pasos):
+[`Contexto_Finza.md`](Contexto_Finza.md).
 
 ## Funcionalidades
-- **Inicio:** saldo, total de ingresos y gastos, y los movimientos recientes.
-- **Movimientos:** registrar ingresos y gastos por categoría, buscar por descripción o categoría, filtrar por tipo y eliminar.
-- **Estadísticas:** totales, saldo, comparación ingresos vs. gastos y gastos por categoría.
+- **Inicio:** saldo, ingresos, gastos, aviso de facturas por vencer y movimientos recientes.
+- **Movimientos:**
+  - crear, **editar** y eliminar ingresos y gastos, **con fecha elegible**;
+  - búsqueda por descripción o categoría;
+  - filtros por tipo, **periodo** (este mes, mes pasado, últimos 3 meses o un rango), **categorías** y **orden**; se guardan al cerrar la app.
+- **Estadísticas:** totales, saldo, ingresos vs. gastos y gastos por categoría.
 - **Facturas:**
-  - con categoría, vencimiento y recurrencia (semanal, mensual, trimestral, anual);
-  - pendientes y pagadas, con el monto total pendiente;
+  - crear, **editar** y **eliminar**;
   - estados según la fecha: *Vencida*, *Vence hoy*, *Próxima* (3 días) y *Pendiente*;
-  - marcar como pagada.
-- **Moneda** en formato colombiano (`$1.500.000,50`).
-- **Actualizaciones:** al abrir, la app revisa si hay una versión nueva publicada en este repo y ofrece descargarla. También se puede revisar a mano con el botón de la barra superior.
+  - chip de estado tocable para marcar pagada o pendiente;
+  - **recurrentes:** al pagarla se crea sola la del siguiente periodo (semanal, mensual, trimestral o anual).
+- **Papelera:** lo eliminado queda 30 días para restaurarlo; al eliminar aparece "Deshacer".
+- **Recordatorios:** notificación el día antes y el día del vencimiento de cada factura, a las 9:00. Banner al abrir la app si hay facturas vencidas o que vencen hoy.
+- **Sincronización con Google Drive:** respaldo automático y los mismos datos en varios celulares.
+- **Tema claro y oscuro** (o el del sistema).
+- **Actualizaciones:** al abrir, la app revisa si hay una versión nueva en este repo, la descarga, verifica que esté completa y abre el instalador.
 
-## Instalar en el celular
+## Configuración (una sola vez)
 
-1. Desde el celular, abre **https://github.com/Isaito05/finza/raw/master/releases/finza.apk**. Ese link siempre apunta a la última versión.
-2. Abre el APK descargado. La primera vez, Android pide permiso para *instalar apps desconocidas* desde el navegador.
-3. Toca **Instalar**.
+La app lee dos valores privados de `finza_config.json`, que no se sube al repo:
 
-> Si ya tenías Finza instalada con `flutter run`, desinstálala antes. Esa versión
-> está firmada con otra llave y Android no deja instalar encima. Al desinstalar se
-> borran los datos guardados.
+```powershell
+Copy-Item finza_config.example.json finza_config.json
+```
 
-## Cómo funcionan las actualizaciones
+```json
+{
+  "FINZA_GOOGLE_CLIENT_ID": "123456789-abc.apps.googleusercontent.com",
+  "FINZA_GITHUB_TOKEN": "github_pat_..."
+}
+```
 
-No hay servidor: el repo hace de servidor.
+Si falta alguno, la app funciona igual, pero sin sincronización (Ajustes dice
+"No disponible en esta versión") o sin actualizaciones.
 
-- `releases/latest.json` (se crea con la primera publicación) dice cuál es la última versión publicada:
-  ```json
-  {
-    "version": "1.1.0",
-    "versionCode": 2,
-    "apkUrl": "https://raw.githubusercontent.com/Isaito05/finza/master/releases/Finza-v1.1.0-2.apk",
-    "changelog": "Qué cambió"
-  }
-  ```
-- Al abrir la app, [`lib/services/actualizacion_service.dart`](lib/services/actualizacion_service.dart) descarga ese JSON y compara su `versionCode` con el build instalado (el `+N` de `version:` en `pubspec.yaml`). Si el publicado es mayor, muestra un diálogo con los cambios y un botón **Descargar** que abre el APK en el navegador.
-- Si no hay internet o todavía no hay nada publicado, no muestra nada.
-- GitHub cachea los archivos unos minutos, así que una versión recién publicada puede tardar un poco en aparecer.
+### Google Cloud: sincronización con Drive
 
-La instalación sigue siendo manual: Android no deja que una app se actualice sola sin Play Store.
+En [console.cloud.google.com](https://console.cloud.google.com), con un proyecto para Finza:
 
-Archivos relevantes:
-- [`lib/main.dart`](lib/main.dart): `_verificarActualizacion()` y `_mostrarDialogoActualizacion()` en `InicioScreen`.
-- [`lib/services/actualizacion_service.dart`](lib/services/actualizacion_service.dart): consulta `latest.json` y abre la descarga.
-- [`lib/models/actualizacion.dart`](lib/models/actualizacion.dart): modelo del JSON.
-- [`lib/app_info.dart`](lib/app_info.dart): versión y build instalados.
+1. **APIs y servicios → Biblioteca:** habilita **Google Drive API**.
+2. **Google Auth Platform → Branding:** nombre "Finza" y tu correo de soporte.
+3. **Audience:** tipo *Externo*. Mientras esté *En prueba*, agrega como usuarios de prueba los correos que van a usar la app. En modo de prueba Google puede pedir el permiso de nuevo cada 7 días (en Ajustes aparece "Dar permiso"). Para evitarlo, pásala a *En producción*: `drive.file` es un permiso no sensible, así que en principio no requiere verificación de Google.
+4. **Data Access:** agrega el scope `https://www.googleapis.com/auth/drive.file`.
+5. **Clients → Crear cliente → Android:**
+   - Package name: `com.example.finza`.
+   - SHA-1: el de tu keystore de release:
+     ```powershell
+     keytool -list -v -keystore $env:USERPROFILE\finza-release.jks -alias finza
+     ```
+   - Para probar con `flutter run`, crea **otro** cliente Android con el SHA-1 de debug: `keytool -list -v -keystore $env:USERPROFILE\.android\debug.keystore -alias androiddebugkey -storepass android`.
+6. **Clients → Crear cliente → Aplicación web** (sin URIs). Su **Client ID** es el que va en `FINZA_GOOGLE_CLIENT_ID`. En Android, `google_sign_in` lo exige aunque no haya servidor.
+
+**Qué ve Finza de tu Drive:** con `drive.file`, solo los archivos que ella misma
+crea. Guarda uno, `finza_datos.json`, en la raíz de tu Drive. Si lo borras,
+Finza lo vuelve a crear en la próxima sincronización con los datos del teléfono.
+
+### GitHub: actualizaciones desde el repo privado
+
+1. GitHub → Settings → Developer settings → **Fine-grained tokens** → Generate new token.
+2. *Repository access:* **Only select repositories** → `Isaito05/finza`.
+3. *Permissions → Repository permissions → Contents:* **Read-only**. Nada más.
+4. Elige la expiración más larga y pon el token en `FINZA_GITHUB_TOKEN`.
+
+El token queda dentro del APK. Como solo puede *leer* este repo, quien lo
+extraiga solo podría ver el código y los APK. **Si el token vence**, las
+versiones instaladas dejan de ver actualizaciones: genera otro, publica una
+versión e instálala a mano una vez.
+
+### Llave de firma
+
+Android solo instala una actualización encima si viene firmada con la **misma
+llave**. Sigue [`android/key.properties.example`](android/key.properties.example)
+para crear el `.jks` y `android/key.properties`. Guarda el `.jks` y sus
+contraseñas con respaldo y **fuera del repo**. Su SHA-1 es el que registras en
+Google Cloud (paso 5).
 
 ## Correr en local
 
 ```powershell
 flutter pub get
-flutter run
+flutter run --dart-define-from-file=finza_config.json
 ```
 
-Requiere Flutter con Dart `^3.13.4` (ver `pubspec.yaml`) y un Android conectado o un emulador.
+En VS Code, la configuración **"Finza"** de `.vscode/launch.json` ya pasa el
+archivo. Sin él, usa "Finza (sin configuración)".
+
+Pruebas: `flutter test` (base de datos real con `sqflite_common_ffi`,
+sincronización contra un Drive simulado, actualizaciones e interfaz).
+
+## Instalar en el celular
+
+La primera vez, el APK se instala a mano. Después, la app se actualiza sola.
+
+- **Por cable:** con el celular conectado, `flutter install --release` (o copia `releases/finza.apk`).
+- **Desde el celular:** abre `https://github.com/Isaito05/finza/blob/master/releases/finza.apk` con tu sesión de GitHub iniciada en el navegador y toca *Download raw file*.
+
+> Si tenías una versión instalada con `flutter run` o firmada con otra llave,
+> desinstálala antes. Si ya conectaste Drive, tus datos vuelven al conectar la
+> misma cuenta; si no, se pierden al desinstalar.
 
 ## Publicar una versión nueva
 
-Desde Windows, en la raíz del repo y en la rama `master` (la app lee `latest.json` de `master`).
-
-### Una sola vez: llave de firma
-
-Android solo instala una actualización encima si viene firmada con la **misma llave**.
-Por eso los APK publicados se firman con un keystore propio, no con la llave de debug
-(que es distinta en cada PC).
-
-1. Sigue los pasos de [`android/key.properties.example`](android/key.properties.example): genera el `.jks` con `keytool` y crea `android/key.properties`.
-2. Guarda el `.jks` y sus contraseñas con respaldo y **fuera del repo**. Si se pierden, la próxima versión no se podrá instalar encima de la anterior.
-
-`key.properties`, `*.jks` y `*.keystore` están en `.gitignore`.
-
-### Cada versión
+Desde Windows, en la raíz del repo, en `master` y sin cambios pendientes:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\release.ps1 -Cambios "Arregla el listado de facturas"
-powershell -ExecutionPolicy Bypass -File .\release.ps1 -Version 1.1.0 -Cambios "Metas de ahorro"
+powershell -ExecutionPolicy Bypass -File .\release.ps1 -Version 1.2.0 -Cambios "Metas de ahorro"
 ```
 
 - `-Cambios` (obligatorio): el texto que ve el usuario en el diálogo de actualización.
@@ -98,26 +133,37 @@ powershell -ExecutionPolicy Bypass -File .\release.ps1 -Version 1.1.0 -Cambios "
 - `-SinPush`: compila y hace commit sin publicar.
 
 Qué hace [`release.ps1`](release.ps1):
-1. Verifica que estés en `master`, sin cambios pendientes y con `android/key.properties`.
+1. Verifica que estés en `master`, sin cambios pendientes, con `android/key.properties` y `finza_config.json`.
 2. Sube `version:` en `pubspec.yaml`: el `+N` siempre y el `X.Y.Z` solo si lo pasaste.
-3. Corre `flutter pub get` y `flutter build apk --release` (solo ARM, que cubre prácticamente todos los celulares). Si falla, revierte el cambio de versión.
-4. Deja el APK en `releases/` como `Finza-vX.Y.Z-N.apk` y `finza.apk` (el link fijo del README), y escribe `releases/latest.json`.
-5. Hace commit `Release vX.Y.Z+N` y `git push origin master`. Desde ahí, las versiones viejas ven el aviso al abrirse.
+3. Compila con `flutter build apk --release --dart-define-from-file=finza_config.json` (solo ARM, que cubre prácticamente todos los celulares). Si falla, revierte la versión.
+4. Deja el APK en `releases/` como `Finza-vX.Y.Z-N.apk` y `finza.apk`, y escribe `releases/latest.json` con la versión, el SHA-256, el tamaño y los cambios.
+5. Hace commit `Release vX.Y.Z+N` y `git push origin master`.
 
-> Cada APK pesa unos 15–20 MB y queda en el historial de git. Para un proyecto
-> de este tamaño está bien. Si el repo crece demasiado, la alternativa es subir
-> los APK a GitHub Releases en vez de al repo.
+### Cómo se actualiza la app
+
+1. Al abrir, [`ActualizacionService`](lib/services/actualizacion_service.dart) lee `releases/latest.json` con la API de GitHub y el token. Sin token, usa la URL pública, que solo sirve si el repo es público.
+2. Si su `versionCode` es mayor que el build instalado, muestra las novedades.
+3. **Actualizar:** descarga el APK dentro de la app con barra de progreso, verifica el SHA-256 y abre el instalador. La primera vez, Android pide permitir que Finza instale apps.
+4. **Más tarde:** no vuelve a preguntar por esa versión en 24 horas. En **Ajustes → Buscar actualizaciones** se puede revisar en cualquier momento.
+
+> Cada APK pesa unos 15–20 MB y queda en el historial de git. Si el repo crece
+> demasiado, la alternativa es moverlos a GitHub Releases.
 
 ## Estructura
 
 ```
 lib/
-  main.dart                  app, pantallas (Inicio, Movimientos, Estadísticas, Facturas) y formularios
-  app_info.dart              versión instalada (package_info_plus)
-  models/                    Movimiento, Factura, Actualizacion
-  database/                  DatabaseHelper (SQLite, versión 2: tablas movimientos y facturas)
-  services/                  ActualizacionService
-releases/                    APK publicado + latest.json (los genera release.ps1)
-release.ps1                  script para compilar y publicar una versión
-android/key.properties.example  cómo configurar la llave de firma
+  main.dart            arranque: providers, servicios y tema
+  app_info.dart        versión instalada
+  config/              AppConfig (valores de finza_config.json)
+  theme/               AppTheme claro/oscuro y ColoresFinza
+  models/              Movimiento, Factura, FiltroMovimientos, Categorias, Actualizacion
+  database/            DatabaseHelper (SQLite, versión 3)
+  providers/           FinanzasProvider (datos) y PreferenciasProvider (ajustes del teléfono)
+  services/            SyncService + DriveApi, RecordatoriosService, ActualizacionService
+  screens/             HomeShell y una pantalla por archivo
+  widgets/             componentes reutilizables (tarjetas, filtros, banner, diálogos)
+  utils/               formato de dinero y fechas, estado de facturas
+test/                  pruebas
+releases/              APK publicado + latest.json (los genera release.ps1)
 ```

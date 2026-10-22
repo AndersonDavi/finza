@@ -9,10 +9,15 @@
 #   -SinPush   compila y commitea, pero no hace push (la version no se publica todavia).
 #   -FirmaDebug  permite publicar sin android/key.properties (no recomendado).
 #
+# Necesita finza_config.json (copia de finza_config.example.json) con el
+# Client ID de Google (sincronizacion con Drive) y el token de GitHub (para
+# que la app baje actualizaciones del repo privado).
+#
 # Que hace:
 #   1. Sube "version:" en pubspec.yaml (el +N siempre, el X.Y.Z solo si se paso).
-#   2. flutter pub get + flutter build apk --release.
-#   3. Copia el APK a releases/ (versionado + finza.apk) y escribe releases/latest.json.
+#   2. flutter pub get + flutter build apk --release (con finza_config.json).
+#   3. Copia el APK a releases/ (versionado + finza.apk) y escribe releases/latest.json
+#      con su SHA-256, que la app verifica despues de descargarlo.
 #   4. Commit y push a master. Desde ese momento la app lo detecta al abrirse.
 #
 # El archivo se mantiene sin tildes a proposito: PowerShell 5.1 lee los .ps1
@@ -31,6 +36,7 @@ Set-Location $PSScriptRoot
 $Repo = "Isaito05/finza"
 $Rama = "master"
 $Pubspec = Join-Path $PSScriptRoot "pubspec.yaml"
+$Config = Join-Path $PSScriptRoot "finza_config.json"
 $ReleasesDir = Join-Path $PSScriptRoot "releases"
 $Utf8SinBom = New-Object System.Text.UTF8Encoding $false
 
@@ -62,6 +68,22 @@ if (-not (Test-Path (Join-Path $PSScriptRoot "android\key.properties")) -and -no
         "Ver android\key.properties.example, o usa -FirmaDebug si sabes lo que haces.")
 }
 
+if (-not (Test-Path $Config)) {
+    Fallar ("Falta finza_config.json. Copia finza_config.example.json y completa el Client ID de Google " +
+        "y el token de GitHub; sin eso el APK no sincroniza ni encuentra actualizaciones.")
+}
+try {
+    $valores = Get-Content $Config -Raw | ConvertFrom-Json
+} catch {
+    Fallar "finza_config.json no es un JSON valido."
+}
+if (-not $valores.FINZA_GOOGLE_CLIENT_ID) {
+    Write-Host "Aviso: FINZA_GOOGLE_CLIENT_ID esta vacio; esta version no podra sincronizar con Drive." -ForegroundColor Yellow
+}
+if (-not $valores.FINZA_GITHUB_TOKEN) {
+    Write-Host "Aviso: FINZA_GITHUB_TOKEN esta vacio; si el repo es privado, la app no vera las actualizaciones." -ForegroundColor Yellow
+}
+
 # --- 1. Version ---
 $contenido = [System.IO.File]::ReadAllText($Pubspec)
 $patron = '(?m)^version:[ \t]*(\d+\.\d+\.\d+)\+(\d+)[ \t]*(?=\r?$)'
@@ -87,7 +109,7 @@ flutter pub get
 if ($LASTEXITCODE -ne 0) { git checkout -- pubspec.yaml pubspec.lock; Fallar "Fallo flutter pub get." }
 
 # Solo ARM: cubre practicamente todos los celulares y deja el APK mas liviano.
-flutter build apk --release --target-platform android-arm,android-arm64
+flutter build apk --release --target-platform android-arm,android-arm64 --dart-define-from-file=finza_config.json
 if ($LASTEXITCODE -ne 0) { git checkout -- pubspec.yaml pubspec.lock; Fallar "Fallo la compilacion. Se revirtio el cambio de version." }
 
 $apkCompilado = Join-Path $PSScriptRoot "build\app\outputs\flutter-apk\app-release.apk"
@@ -108,8 +130,11 @@ Copy-Item $apkCompilado (Join-Path $ReleasesDir "finza.apk") -Force
 $latest = [ordered]@{
     version     = $versionNueva
     versionCode = $buildNuevo
-    apkUrl      = "https://raw.githubusercontent.com/$Repo/$Rama/releases/$nombreApk"
+    apk         = "releases/$nombreApk"
+    sha256      = (Get-FileHash $apkCompilado -Algorithm SHA256).Hash.ToLower()
+    tamano      = (Get-Item $apkCompilado).Length
     changelog   = $Cambios
+    fecha       = (Get-Date).ToString("yyyy-MM-dd")
 }
 $json = $latest | ConvertTo-Json
 [System.IO.File]::WriteAllText((Join-Path $ReleasesDir "latest.json"), $json + "`n", $Utf8SinBom)
@@ -131,5 +156,4 @@ git push origin $Rama
 if ($LASTEXITCODE -ne 0) { Fallar "Fallo el push. El commit quedo local: reintenta con 'git push origin $Rama'." }
 
 Write-Host "== Publicada v$versionNueva+$buildNuevo ==" -ForegroundColor Green
-Write-Host "GitHub puede tardar unos minutos en servir el latest.json nuevo."
-Write-Host "Descarga directa: https://github.com/$Repo/raw/$Rama/releases/finza.apk"
+Write-Host "Los celulares con una version anterior la veran al abrir Finza (o en Ajustes > Buscar actualizaciones)."
