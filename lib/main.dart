@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 
+import 'app_info.dart';
 import 'database/database_helper.dart';
+import 'models/actualizacion.dart';
 import 'models/movimiento.dart';
 import 'models/factura.dart';
+import 'services/actualizacion_service.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await AppInfo.cargar();
   runApp(const FinzaApp());
 }
 
@@ -48,6 +53,9 @@ class _InicioScreenState extends State<InicioScreen> {
     super.initState();
     _cargarMovimientos();
     _cargarFacturas();
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _verificarActualizacion(),
+    );
   }
 
   Future<void> _cargarMovimientos() async {
@@ -110,6 +118,13 @@ class _InicioScreenState extends State<InicioScreen> {
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
         centerTitle: false,
+        actions: [
+          IconButton(
+            tooltip: 'Buscar actualizaciones',
+            icon: const Icon(Icons.system_update_outlined),
+            onPressed: () => _verificarActualizacion(manual: true),
+          ),
+        ],
       ),
       body: _construirPagina(),
       bottomNavigationBar: NavigationBar(
@@ -1174,6 +1189,77 @@ class _InicioScreenState extends State<InicioScreen> {
               ),
             ],
           ),
+        );
+      },
+    );
+  }
+
+  Future<void> _verificarActualizacion({bool manual = false}) async {
+    Actualizacion? actualizacion;
+
+    try {
+      actualizacion = await ActualizacionService.buscarActualizacion();
+    } catch (_) {
+      // Sin internet o GitHub no responde: al abrir la app no molestamos.
+      if (manual && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'No se pudo buscar actualizaciones. Revisa tu conexión.',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
+    if (!mounted) return;
+
+    if (actualizacion == null) {
+      if (manual) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Ya tienes la última versión (${AppInfo.versionLabel}).',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
+    _mostrarDialogoActualizacion(actualizacion);
+  }
+
+  void _mostrarDialogoActualizacion(Actualizacion actualizacion) {
+    var mensaje =
+        'Hay una nueva versión de Finza '
+        '(v${actualizacion.version}+${actualizacion.versionCode}).';
+
+    final cambios = actualizacion.cambios;
+    if (cambios != null && cambios.isNotEmpty) {
+      mensaje += '\n\n$cambios';
+    }
+
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Actualización disponible'),
+          content: Text(mensaje),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Más tarde'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                ActualizacionService.abrirDescarga(actualizacion.apkUrl);
+              },
+              child: const Text('Descargar'),
+            ),
+          ],
         );
       },
     );

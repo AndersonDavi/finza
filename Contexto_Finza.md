@@ -199,6 +199,24 @@ pasada. 2. Retirar el botón y la función temporales. 3. Implementar
 edición y eliminación de facturas para completar el CRUD. 4. Continuar
 con recordatorios/notificaciones, pagos recurrentes y metas de ahorro.
 
+## Actualizaciones automáticas
+
+-   El repo es público y hace de servidor: `releases/latest.json` indica
+    la última versión y la URL del APK, que también vive en `releases/`.
+-   Al abrir, la app (`lib/services/actualizacion_service.dart`) compara
+    el `versionCode` publicado con el build instalado y, si hay uno
+    nuevo, muestra un diálogo con botón **Descargar**. El ícono de la
+    barra superior permite revisar a mano.
+-   Para publicar: `release.ps1` (sube la versión, compila el APK,
+    actualiza `releases/`, hace commit y push a `master`). Detalle en el
+    `README.md`.
+-   Los APK publicados se firman con el keystore de
+    `android/key.properties` (no versionado). Sin la misma llave, Android
+    no instala la actualización encima.
+-   Dependencias agregadas: `http`, `url_launcher`, `package_info_plus`.
+-   Se agregó el permiso `INTERNET` al `AndroidManifest.xml` principal
+    (el APK release no lo trae por defecto).
+
 ## Comandos útiles
 
 Desde la carpeta del proyecto:
