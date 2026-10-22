@@ -120,6 +120,7 @@ class _DialogoDescargaState extends State<_DialogoDescarga> {
   int _bytes = 0;
   String? _error;
   String? _rutaApk;
+  bool _cancelada = false;
 
   @override
   void initState() {
@@ -137,6 +138,7 @@ class _DialogoDescargaState extends State<_DialogoDescarga> {
     try {
       final ruta = await widget.servicio.descargar(
         widget.actualizacion,
+        cancelada: () => _cancelada,
         progreso: (progreso, bytes) {
           if (mounted) {
             setState(() {
@@ -192,7 +194,10 @@ class _DialogoDescargaState extends State<_DialogoDescarga> {
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: () {
+            _cancelada = true;
+            Navigator.pop(context);
+          },
           child: Text(descargando ? 'Cancelar' : 'Cerrar'),
         ),
         if (_error != null && _rutaApk == null)

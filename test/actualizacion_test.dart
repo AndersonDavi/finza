@@ -94,6 +94,17 @@ void main() {
     expect(progresos.last, 1.0);
   });
 
+  test('cancelar detiene la descarga y borra lo descargado', () async {
+    final actualizaciones = await servicio();
+    final encontrada = (await actualizaciones.buscar())!;
+
+    await expectLater(
+      actualizaciones.descargar(encontrada, cancelada: () => true),
+      throwsA(isA<ActualizacionException>()),
+    );
+    expect(carpeta.listSync(), isEmpty);
+  });
+
   test('rechaza un APK dañado', () async {
     final actualizaciones = await servicio(contenidoApk: apk.sublist(0, 1000));
     final encontrada = (await actualizaciones.buscar())!;

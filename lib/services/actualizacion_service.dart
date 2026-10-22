@@ -111,14 +111,18 @@ class ActualizacionService {
   }
 
   /// Descarga el APK y devuelve la ruta del archivo. [progreso] recibe un
-  /// valor entre 0 y 1 (o null si no se conoce el tamaño).
+  /// valor entre 0 y 1 (o null si no se conoce el tamaño). Si [cancelada]
+  /// devuelve true, la descarga se detiene y se borra lo descargado.
   Future<String> descargar(
     Actualizacion actualizacion, {
     void Function(double? progreso, int bytes)? progreso,
+    bool Function()? cancelada,
   }) async {
     final solicitud = http.Request('GET', _urlArchivo(actualizacion.apk))
       ..headers.addAll(_headers);
-    final respuesta = await _cliente.send(solicitud);
+    final respuesta = await _cliente
+        .send(solicitud)
+        .timeout(const Duration(seconds: 30));
 
     if (respuesta.statusCode != 200) {
       throw ActualizacionException(
@@ -128,12 +132,26 @@ class ActualizacionService {
 
     final total = respuesta.contentLength ?? actualizacion.tamano;
     final carpeta = await getTemporaryDirectory();
-    final archivo = File('${carpeta.path}/finza-actualizacion.apk');
+    await _borrarDescargasAnteriores(carpeta);
+
+    // Nombre único: si se cancela y se reintenta, la descarga vieja no
+    // pisa ni borra la nueva.
+    final archivo = File(
+      '${carpeta.path}/finza-${actualizacion.versionCode}-'
+      '${DateTime.now().millisecondsSinceEpoch}.apk',
+    );
     final salida = archivo.openWrite();
     var recibidos = 0;
+    var completa = false;
 
     try {
-      await for (final bloque in respuesta.stream) {
+      // Si la conexión se queda colgada, no se espera para siempre.
+      await for (final bloque in respuesta.stream.timeout(
+        const Duration(seconds: 30),
+      )) {
+        if (cancelada?.call() ?? false) {
+          throw ActualizacionException('Descarga cancelada.');
+        }
         salida.add(bloque);
         recibidos += bloque.length;
         progreso?.call(
@@ -141,8 +159,14 @@ class ActualizacionService {
           recibidos,
         );
       }
+      completa = true;
+    } on TimeoutException {
+      throw ActualizacionException(
+        'La descarga se detuvo. Revisa tu conexión e intenta de nuevo.',
+      );
     } finally {
       await salida.close();
+      if (!completa && await archivo.exists()) await archivo.delete();
     }
 
     final esperado = actualizacion.sha256;
@@ -157,6 +181,24 @@ class ActualizacionService {
     }
 
     return archivo.path;
+  }
+
+  /// Los APK de actualizaciones anteriores ya no sirven y pesan 15-20 MB.
+  Future<void> _borrarDescargasAnteriores(Directory carpeta) async {
+    try {
+      await for (final archivo in carpeta.list()) {
+        final nombre = archivo.uri.pathSegments.last;
+        if (archivo is File &&
+            nombre.startsWith('finza-') &&
+            nombre.endsWith('.apk') &&
+            DateTime.now().difference(await archivo.lastModified()) >
+                const Duration(minutes: 10)) {
+          await archivo.delete();
+        }
+      }
+    } catch (_) {
+      // Limpiar es opcional: si falla, se sigue con la descarga.
+    }
   }
 
   /// Abre el instalador de Android con el APK descargado. La primera vez,

@@ -196,7 +196,7 @@ Formato colombiano: punto para miles y coma para decimales. Ejemplos:
 de movimientos y facturas, papelera, filtros, facturas recurrentes,
 recordatorios, tema oscuro, sincronización con Drive y actualizaciones
 desde el repo privado, modo sin conexión con reintentos. `flutter analyze`
-está limpio y hay 40 pruebas
+está limpio y hay 48 pruebas
 automáticas (`flutter test`).
 
 **Falta probar en el teléfono:** compilar el APK, el login con Google y la
@@ -212,7 +212,6 @@ Próximos pasos sugeridos:
 1.  Metas de ahorro y presupuestos por categoría.
 2.  Selector de periodo en Estadísticas.
 3.  Al pagar una factura, ofrecer registrarla como gasto.
-4.  Ícono monocromo para las notificaciones.
 
 ## Comandos útiles
 

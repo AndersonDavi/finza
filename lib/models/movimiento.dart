@@ -86,8 +86,10 @@ class Movimiento {
       'descripcion': descripcion,
       'monto': monto,
       'fecha': fecha.toIso8601String(),
-      'actualizadoEn': actualizadoEn.toIso8601String(),
-      'eliminadoEn': eliminadoEn?.toIso8601String(),
+      // En UTC: se comparan entre celulares que pueden tener otra zona
+      // horaria o un cambio de horario de verano.
+      'actualizadoEn': actualizadoEn.toUtc().toIso8601String(),
+      'eliminadoEn': eliminadoEn?.toUtc().toIso8601String(),
       'purgado': purgado,
     };
   }

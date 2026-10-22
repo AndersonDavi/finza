@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:uuid/uuid.dart';
 
 import '../database/database_helper.dart';
 import '../models/factura.dart';
@@ -60,8 +61,41 @@ class FinanzasProvider extends ChangeNotifier {
   Future<void> cargar() async {
     _todosLosMovimientos = await _db.obtenerMovimientos();
     _todasLasFacturas = await _db.obtenerFacturas();
+
+    if (await _purgarVencidos()) {
+      _todosLosMovimientos = await _db.obtenerMovimientos();
+      _todasLasFacturas = await _db.obtenerFacturas();
+      alModificarLocalmente?.call();
+    }
+
     cargando = false;
     notifyListeners();
+  }
+
+  /// Elimina definitivamente lo que lleva más de [diasEnPapelera] días en
+  /// la papelera. Se marca como purgado (no se borra la fila) para que
+  /// también desaparezca en los otros celulares.
+  Future<bool> _purgarVencidos() async {
+    final ahora = DateTime.now();
+    var hubo = false;
+
+    for (final m in _todosLosMovimientos) {
+      if (m.enPapelera && !_sigueEnPapelera(m.eliminadoEn!)) {
+        await _db.actualizarMovimiento(
+          m.copyWith(purgado: true, actualizadoEn: ahora),
+        );
+        hubo = true;
+      }
+    }
+    for (final f in _todasLasFacturas) {
+      if (f.enPapelera && !_sigueEnPapelera(f.eliminadoEn!)) {
+        await _db.actualizarFactura(
+          f.copyWith(purgado: true, actualizadoEn: ahora),
+        );
+        hubo = true;
+      }
+    }
+    return hubo;
   }
 
   Future<void> _modificado() async {
@@ -138,15 +172,27 @@ class FinanzasProvider extends ChangeNotifier {
       factura.frecuencia,
     );
 
-    // Si se desmarca y se vuelve a marcar como pagada, no se duplica.
-    final yaExiste = facturas.any(
-      (f) =>
-          f.nombre == factura.nombre &&
-          soloFecha(f.fechaVencimiento) == soloFecha(fecha),
+    // El uuid se deriva de la factura pagada y la fecha: si se paga la misma
+    // factura en dos celulares antes de sincronizar, los dos crean el mismo
+    // registro y al combinar queda uno solo.
+    final uuid = const Uuid().v5(
+      Namespace.url.value,
+      'finza:siguiente:${factura.uuid}:${soloFecha(fecha).toIso8601String()}',
     );
+
+    // Si se desmarca y se vuelve a marcar como pagada, no se duplica (ni se
+    // recrea si el usuario la eliminó).
+    final yaExiste =
+        await _db.existeFactura(uuid) ||
+        facturas.any(
+          (f) =>
+              f.nombre == factura.nombre &&
+              soloFecha(f.fechaVencimiento) == soloFecha(fecha),
+        );
     if (yaExiste) return null;
 
     final siguiente = Factura(
+      uuid: uuid,
       nombre: factura.nombre,
       categoria: factura.categoria,
       monto: factura.monto,

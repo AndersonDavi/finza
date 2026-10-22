@@ -55,6 +55,10 @@ class _BaseEnMemoria implements DatabaseHelper {
         ..sort((a, b) => a.fechaVencimiento.compareTo(b.fechaVencimiento));
 
   @override
+  Future<bool> existeFactura(String uuid) async =>
+      facturas.any((f) => f.uuid == uuid);
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 

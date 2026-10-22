@@ -10,6 +10,7 @@ import 'package:finza/services/drive_api.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:finza/services/sync_service.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -385,6 +386,174 @@ void main() {
     expect(SyncService.esFallaTemporal(DriveException(429, 'x')), isTrue);
     expect(SyncService.esFallaTemporal(DriveException(403, 'x')), isFalse);
     expect(SyncService.esFallaTemporal(Exception('versión nueva')), isFalse);
+    expect(
+      SyncService.esFallaTemporal(
+        const GoogleSignInException(
+          code: GoogleSignInExceptionCode.unknownError,
+        ),
+      ),
+      isFalse,
+    );
+  });
+
+  group('correcciones de la revisión', () {
+    late _DriveFalso drive;
+    late FinanzasProvider finanzas;
+    late SyncService sync;
+
+    setUp(() async {
+      await usarBaseNueva('revision_${DateTime.now().microsecondsSinceEpoch}');
+      SharedPreferences.setMockInitialValues({});
+      drive = _DriveFalso();
+      finanzas = FinanzasProvider();
+      await finanzas.cargar();
+      sync = SyncService(
+        finanzas,
+        await SharedPreferences.getInstance(),
+        clienteHttp: drive.cliente,
+        hayRed: () async => true,
+      );
+      await sync.conectarParaPruebas(() async => 'token');
+    });
+
+    tearDown(() => sync.dispose());
+
+    Movimiento gasto(String descripcion) => Movimiento(
+      tipo: 'Gasto',
+      categoria: 'Transporte',
+      descripcion: descripcion,
+      monto: 3000,
+      fecha: DateTime(2026, 10, 1),
+    );
+
+    test('las fechas de sincronización se guardan en UTC', () {
+      final json = gasto('Bus').toJson();
+      expect(json['actualizadoEn'], endsWith('Z'));
+    });
+
+    test('lo que llega de Drive no pisa una edición local más nueva', () async {
+      await finanzas.guardarMovimiento(gasto('Bus'));
+      final local = finanzas.movimientos.single;
+      final viejo = local.copyWith(
+        descripcion: 'Versión vieja de Drive',
+        actualizadoEn: local.actualizadoEn.subtract(const Duration(minutes: 1)),
+      );
+      final nuevo = local.copyWith(
+        descripcion: 'Versión nueva de Drive',
+        actualizadoEn: local.actualizadoEn.add(const Duration(minutes: 1)),
+      );
+
+      await DatabaseHelper.instance.aplicarCambiosRemotos(
+        movimientos: [viejo],
+        facturas: [],
+      );
+      await finanzas.cargar();
+      expect(finanzas.movimientos.single.descripcion, 'Bus');
+
+      await DatabaseHelper.instance.aplicarCambiosRemotos(
+        movimientos: [nuevo],
+        facturas: [],
+      );
+      await finanzas.cargar();
+      expect(finanzas.movimientos.single.descripcion, 'Versión nueva de Drive');
+    });
+
+    test('pagar la misma recurrente en dos celulares no la duplica', () async {
+      final arriendo = Factura(
+        nombre: 'Arriendo',
+        categoria: 'Vivienda',
+        monto: 900000,
+        fechaVencimiento: DateTime(2026, 3, 5),
+        recurrente: true,
+        frecuencia: 'Mensual',
+        estado: 'Pendiente',
+      );
+
+      Future<String> pagarEnOtroCelular(String nombre) async {
+        await usarBaseNueva(nombre);
+        final celular = FinanzasProvider();
+        await celular.guardarFactura(arriendo);
+        final siguiente = await celular.cambiarEstadoFactura(
+          celular.facturas.single,
+          pagada: true,
+        );
+        return siguiente!.uuid;
+      }
+
+      final unix = DateTime.now().microsecondsSinceEpoch;
+      final enA = await pagarEnOtroCelular('celular_a_$unix');
+      final enB = await pagarEnOtroCelular('celular_b_$unix');
+      expect(enA, enB);
+    });
+
+    test(
+      'dos celulares que crean el archivo a la vez terminan en el mismo',
+      () async {
+        // El otro celular ya creó su archivo, pero esta búsqueda no lo ve.
+        drive.archivos['del_otro_celular'] = jsonEncode({
+          'formato': 1,
+          'movimientos': [gasto('Taxi').toJson()],
+          'facturas': [],
+        });
+        drive.ocultarEnPrimeraBusqueda = true;
+
+        await finanzas.guardarMovimiento(gasto('Bus'));
+        await sync.sincronizarCon(drive.api);
+
+        expect(drive.archivos.keys, ['del_otro_celular']);
+        final subidos = (drive.unicoArchivo['movimientos'] as List).map(
+          (m) => m['descripcion'],
+        );
+        expect(subidos, unorderedEquals(['Taxi', 'Bus']));
+        expect(
+          finanzas.movimientos.map((m) => m.descripcion),
+          unorderedEquals(['Taxi', 'Bus']),
+        );
+      },
+    );
+
+    test(
+      'desconectar a mitad de una sincronización la deja sin efecto',
+      () async {
+        await finanzas.guardarMovimiento(gasto('Bus'));
+        drive.pausa = Completer();
+
+        final enCurso = sync.sincronizar();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await sync.desconectar();
+        drive.pausa!.complete();
+        await enCurso;
+
+        final prefs = await SharedPreferences.getInstance();
+        expect(prefs.getString('drive_archivo_id'), isNull);
+        expect(sync.vinculado, isFalse);
+        expect(sync.estado, isNot(EstadoSync.listo));
+      },
+    );
+
+    test('la papelera purga sola lo que lleva más de 30 días', () async {
+      var modificaciones = 0;
+      finanzas.alModificarLocalmente = () => modificaciones++;
+      final hace40Dias = DateTime.now().subtract(const Duration(days: 40));
+
+      await DatabaseHelper.instance.insertarMovimiento(
+        gasto('Viejo').copyWith(eliminadoEn: hace40Dias),
+      );
+      await DatabaseHelper.instance.insertarMovimiento(
+        gasto('Reciente').copyWith(eliminadoEn: DateTime.now()),
+      );
+      await finanzas.cargar();
+
+      expect(finanzas.movimientosEnPapelera.single.descripcion, 'Reciente');
+      expect(modificaciones, 1);
+
+      // La purga queda en la base para que viaje a los otros celulares.
+      final exportado = await DatabaseHelper.instance.exportarParaSincronizar();
+      final viejo = exportado['movimientos']!.firstWhere(
+        (m) => m['descripcion'] == 'Viejo',
+      );
+      expect(viejo['purgado'], isTrue);
+    });
   });
 }
 
@@ -399,7 +568,15 @@ class _DriveFalso {
   /// Si es true, la conexión se corta antes de llegar a Drive.
   bool sinRed = false;
 
+  /// Simula que otro celular creó su archivo justo después de que este
+  /// buscara: la primera búsqueda no lo ve.
+  bool ocultarEnPrimeraBusqueda = false;
+
+  /// Si no es null, cada respuesta espera a que se complete.
+  Completer<void>? pausa;
+
   MockClient get cliente => MockClient((solicitud) async {
+    if (pausa != null) await pausa!.future;
     if (sinRed) throw http.ClientException('Connection reset');
     if (fallaCon != null) return http.Response('{}', fallaCon!);
     return _responder(solicitud);
@@ -418,6 +595,10 @@ class _DriveFalso {
     final ruta = solicitud.url.path;
 
     if (solicitud.method == 'GET' && ruta == '/drive/v3/files') {
+      if (ocultarEnPrimeraBusqueda) {
+        ocultarEnPrimeraBusqueda = false;
+        return http.Response(jsonEncode({'files': []}), 200);
+      }
       return http.Response(
         jsonEncode({
           'files': [
@@ -446,6 +627,10 @@ class _DriveFalso {
       if (!archivos.containsKey(id)) return http.Response('', 404);
       archivos[id] = solicitud.body;
       return http.Response('{}', 200);
+    }
+    if (solicitud.method == 'DELETE' && ruta.startsWith('/drive/v3/files/')) {
+      archivos.remove(ruta.split('/').last);
+      return http.Response('', 204);
     }
     return http.Response('ruta no simulada: ${solicitud.method} $ruta', 500);
   }

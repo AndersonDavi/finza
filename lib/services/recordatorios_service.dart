@@ -42,14 +42,22 @@ class RecordatoriosService {
   Future<void> inicializar() async {
     if (defaultTargetPlatform != TargetPlatform.android) return;
 
+    tz.initializeTimeZones();
     try {
-      tz.initializeTimeZones();
       final zona = await FlutterTimezone.getLocalTimezone();
       tz.setLocalLocation(tz.getLocation(zona.identifier));
+    } catch (e) {
+      // Algunos teléfonos reportan zonas que no están en la base de datos
+      // (ej. "GMT-05:00"). Se queda en UTC: igual funciona, porque cada aviso
+      // se programa con el instante exacto (TZDateTime.from).
+      debugPrint('Recordatorios: zona horaria desconocida, se usa UTC: $e');
+    }
 
+    try {
       await _plugin.initialize(
         settings: const InitializationSettings(
-          android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+          // Ícono monocromo: con el de la app, Android muestra un cuadro blanco.
+          android: AndroidInitializationSettings('ic_stat_finza'),
         ),
         onDidReceiveNotificationResponse: (_) => alTocarNotificacion?.call(),
       );

@@ -142,6 +142,7 @@ class _TarjetaSincronizacion extends StatelessWidget {
         lineas = [
           'Respaldo automático y los mismos datos en todos tus celulares. '
               'Finza solo puede ver el archivo que ella misma crea en tu Drive.',
+          if (sync.error != null) sync.error!,
         ];
         acciones = [
           FilledButton.icon(
@@ -153,8 +154,9 @@ class _TarjetaSincronizacion extends StatelessWidget {
       case EstadoSync.sinPermiso:
         titulo = cuenta;
         lineas = [
-          'Falta el permiso para guardar en tu Drive. Tus datos siguen '
-              'guardados en este celular.',
+          'Falta el permiso para guardar en tu Drive, o hay que volver a '
+              'elegir la cuenta. Tus datos siguen guardados en este celular.',
+          if (sync.error != null) 'Detalle: ${sync.error}',
         ];
         acciones = [
           FilledButton(

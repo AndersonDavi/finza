@@ -89,7 +89,7 @@ class DatabaseHelper {
 
     // Versión 3: campos para sincronizar con Drive y para la papelera.
     if (oldVersion < 3) {
-      final ahora = DateTime.now().toIso8601String();
+      final ahora = DateTime.now().toUtc().toIso8601String();
 
       for (final tabla in ['movimientos', 'facturas']) {
         await db.execute('ALTER TABLE $tabla ADD COLUMN uuid TEXT');
@@ -180,6 +180,19 @@ class DatabaseHelper {
     return resultado.map((map) => Factura.fromMap(map)).toList();
   }
 
+  /// Si existe una factura con ese uuid, incluidas las eliminadas.
+  Future<bool> existeFactura(String uuid) async {
+    final db = await instance.database;
+
+    final resultado = await db.query(
+      'facturas',
+      columns: ['id'],
+      where: 'uuid = ?',
+      whereArgs: [uuid],
+    );
+    return resultado.isNotEmpty;
+  }
+
   Future<int> actualizarFactura(Factura factura) async {
     final db = await instance.database;
 
@@ -234,16 +247,31 @@ class DatabaseHelper {
   ) async {
     datos.remove('id');
 
-    final actualizadas = await txn.update(
+    final actual = await txn.query(
+      tabla,
+      columns: ['actualizadoEn'],
+      where: 'uuid = ?',
+      whereArgs: [datos['uuid']],
+    );
+
+    if (actual.isEmpty) {
+      await txn.insert(tabla, datos);
+      return;
+    }
+
+    // Si el usuario editó el registro mientras se descargaba el archivo de
+    // Drive, la versión local es más nueva y no se pisa (se sube en la
+    // próxima sincronización).
+    final local = DateTime.parse(actual.first['actualizadoEn'] as String);
+    final remoto = DateTime.parse(datos['actualizadoEn'] as String);
+    if (!remoto.isAfter(local)) return;
+
+    await txn.update(
       tabla,
       datos,
       where: 'uuid = ?',
       whereArgs: [datos['uuid']],
     );
-
-    if (actualizadas == 0) {
-      await txn.insert(tabla, datos);
-    }
   }
 
   Future<void> cerrarBaseDeDatos() async {

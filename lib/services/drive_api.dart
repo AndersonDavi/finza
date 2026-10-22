@@ -29,13 +29,14 @@ class DriveApi {
 
   Map<String, String> get _headers => {'Authorization': 'Bearer $_accessToken'};
 
-  /// Id del archivo más reciente con ese nombre, o null si no existe.
+  /// Id del archivo **más antiguo** con ese nombre, o null si no existe.
+  /// Si dos celulares crearon uno a la vez, así los dos eligen el mismo.
   Future<String?> buscarArchivo(String nombre) async {
     final uri = Uri.https('www.googleapis.com', '/drive/v3/files', {
       'q': "name = '$nombre' and trashed = false",
       'spaces': 'drive',
       'fields': 'files(id)',
-      'orderBy': 'modifiedTime desc',
+      'orderBy': 'createdTime',
       'pageSize': '1',
     });
 
@@ -119,6 +120,17 @@ class DriveApi {
     _verificar(respuesta);
 
     return true;
+  }
+
+  /// Borra el archivo. No falla si ya no existe.
+  Future<void> eliminar(String id) async {
+    final uri = Uri.https('www.googleapis.com', '/drive/v3/files/$id');
+
+    final respuesta = await _cliente
+        .delete(uri, headers: _headers)
+        .timeout(_timeout);
+    if (respuesta.statusCode == 404) return;
+    _verificar(respuesta);
   }
 
   void _verificar(http.Response respuesta) {

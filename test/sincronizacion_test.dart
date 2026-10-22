@@ -45,6 +45,15 @@ void main() {
       expect(resultado.hayQueSubir, isTrue);
     });
 
+    test('compara instantes aunque vengan en zonas horarias distintas', () {
+      // 10:30 en Bogotá (UTC-5) es 15:30 UTC: más reciente que 15:00 UTC.
+      final resultado = combinarRegistros(
+        [registro('a', '2026-03-01T15:00:00Z', valor: 'utc')],
+        [registro('a', '2026-03-01T10:30:00-05:00', valor: 'bogota')],
+      );
+      expect(resultado.combinados.single['valor'], 'bogota');
+    });
+
     test('sin cambios no aplica ni sube nada', () {
       final datos = [registro('a', '2026-01-01T10:00:00')];
       final resultado = combinarRegistros(datos, [...datos]);
