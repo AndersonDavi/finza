@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -6,6 +7,7 @@ import 'package:finza/models/factura.dart';
 import 'package:finza/models/movimiento.dart';
 import 'package:finza/providers/finanzas_provider.dart';
 import 'package:finza/services/drive_api.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:finza/services/sync_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -244,6 +246,146 @@ void main() {
       expect(jsonDecode(drive.archivos['x']!)['formato'], 99);
     });
   });
+  group('sin conexión con Drive', () {
+    late _DriveFalso drive;
+    late FinanzasProvider finanzas;
+    late SyncService sync;
+    late StreamController<List<ConnectivityResult>> red;
+    late bool hayRed;
+
+    setUp(() async {
+      await usarBaseNueva('offline_${DateTime.now().microsecondsSinceEpoch}');
+      SharedPreferences.setMockInitialValues({});
+      drive = _DriveFalso();
+      red = StreamController.broadcast();
+      hayRed = true;
+      finanzas = FinanzasProvider();
+      await finanzas.cargar();
+      sync = SyncService(
+        finanzas,
+        await SharedPreferences.getInstance(),
+        clienteHttp: drive.cliente,
+        conectividad: red.stream,
+        hayRed: () async => hayRed,
+      );
+      await sync.conectarParaPruebas(() async => 'token');
+      finanzas.alModificarLocalmente = sync.programarSincronizacion;
+    });
+
+    tearDown(() async {
+      sync.dispose();
+      await red.close();
+    });
+
+    Future<void> esperarEstado(EstadoSync estado) async {
+      for (var i = 0; i < 200 && sync.estado != estado; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(sync.estado, estado);
+    }
+
+    Movimiento gasto(String descripcion) => Movimiento(
+      tipo: 'Gasto',
+      categoria: 'Transporte',
+      descripcion: descripcion,
+      monto: 3000,
+      fecha: DateTime(2026, 10, 1),
+    );
+
+    test(
+      'sin internet la app sigue funcionando y deja el cambio pendiente',
+      () async {
+        hayRed = false;
+        await finanzas.guardarMovimiento(gasto('Bus'));
+        await sync.sincronizar();
+
+        expect(sync.estado, EstadoSync.sinConexion);
+        expect(sync.hayCambiosPendientes, isTrue);
+        expect(sync.proximoReintento, isNotNull);
+        expect(finanzas.movimientos.single.descripcion, 'Bus');
+        expect(drive.archivos, isEmpty);
+      },
+    );
+
+    test('con Drive caído, sube lo pendiente apenas vuelve la red', () async {
+      drive.fallaCon = 503;
+      await finanzas.guardarMovimiento(gasto('Bus'));
+      await sync.sincronizar();
+      expect(sync.estado, EstadoSync.sinConexion);
+
+      drive.fallaCon = null;
+      red.add([ConnectivityResult.wifi]);
+      await esperarEstado(EstadoSync.listo);
+
+      expect(sync.hayCambiosPendientes, isFalse);
+      expect(sync.proximoReintento, isNull);
+      expect(
+        (drive.unicoArchivo['movimientos'] as List).single['descripcion'],
+        'Bus',
+      );
+    });
+
+    test('una conexión que se corta a mitad cuenta como temporal', () async {
+      drive.sinRed = true;
+      await finanzas.guardarMovimiento(gasto('Bus'));
+      await sync.sincronizar();
+      expect(sync.estado, EstadoSync.sinConexion);
+    });
+
+    test('los reintentos se espacian cada vez más', () async {
+      hayRed = false;
+      final esperas = <int>[];
+      for (var i = 0; i < 8; i++) {
+        final antes = DateTime.now();
+        await sync.sincronizar();
+        esperas.add(sync.proximoReintento!.difference(antes).inSeconds);
+      }
+      expect(esperas, [15, 30, 60, 120, 300, 600, 600, 600]);
+    });
+
+    test('un error que no es de conexión no se reintenta solo', () async {
+      drive.fallaCon = 403;
+      await finanzas.guardarMovimiento(gasto('Bus'));
+      await sync.sincronizar();
+
+      expect(sync.estado, EstadoSync.error);
+      expect(sync.proximoReintento, isNull);
+      expect(sync.hayCambiosPendientes, isTrue);
+    });
+
+    test('los pendientes se recuerdan aunque se cierre la app', () async {
+      hayRed = false;
+      await finanzas.guardarMovimiento(gasto('Bus'));
+      await sync.sincronizar();
+      sync.dispose();
+
+      // "Se vuelve a abrir la app": nuevo servicio con las mismas preferencias.
+      sync = SyncService(
+        finanzas,
+        await SharedPreferences.getInstance(),
+        clienteHttp: drive.cliente,
+        hayRed: () async => true,
+      );
+      expect(sync.vinculado, isTrue);
+      expect(sync.hayCambiosPendientes, isTrue);
+
+      await sync.conectarParaPruebas(() async => 'token');
+      await sync.sincronizar();
+      expect(sync.estado, EstadoSync.listo);
+      expect(sync.hayCambiosPendientes, isFalse);
+      expect(drive.archivos, hasLength(1));
+    });
+  });
+
+  test('clasifica qué fallas son temporales', () {
+    expect(SyncService.esFallaTemporal(const SocketException('x')), isTrue);
+    expect(SyncService.esFallaTemporal(TimeoutException('x')), isTrue);
+    expect(SyncService.esFallaTemporal(http.ClientException('x')), isTrue);
+    expect(SyncService.esFallaTemporal(DriveException(503, 'x')), isTrue);
+    expect(SyncService.esFallaTemporal(DriveException(429, 'x')), isTrue);
+    expect(SyncService.esFallaTemporal(DriveException(403, 'x')), isFalse);
+    expect(SyncService.esFallaTemporal(Exception('versión nueva')), isFalse);
+  });
 }
 
 /// Simula la API de Drive en memoria.
@@ -251,7 +393,19 @@ class _DriveFalso {
   final archivos = <String, String>{};
   var _siguienteId = 1;
 
-  DriveApi get api => DriveApi('token', cliente: MockClient(_responder));
+  /// Si no es null, Drive responde con este código a todo (503 = caído).
+  int? fallaCon;
+
+  /// Si es true, la conexión se corta antes de llegar a Drive.
+  bool sinRed = false;
+
+  MockClient get cliente => MockClient((solicitud) async {
+    if (sinRed) throw http.ClientException('Connection reset');
+    if (fallaCon != null) return http.Response('{}', fallaCon!);
+    return _responder(solicitud);
+  });
+
+  DriveApi get api => DriveApi('token', cliente: cliente);
 
   Map<String, dynamic> get unicoArchivo =>
       jsonDecode(archivos.values.single) as Map<String, dynamic>;

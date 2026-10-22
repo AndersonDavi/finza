@@ -34,7 +34,7 @@ usuarios?"
 -   Pruebas: dispositivo Android conectado.
 -   Base de datos local: SQLite mediante `sqflite` y `path`.
 -   Estado: `provider`. Preferencias: `shared_preferences`.
--   Sincronización: Google Drive (`google_sign_in` 7 + API REST con `http`).
+-   Sincronización: Google Drive (`google_sign_in` 7 + API REST con `http`), `connectivity_plus`.
 -   Recordatorios: `flutter_local_notifications`, `timezone`, `flutter_timezone`.
 -   Actualizaciones: API de GitHub, `crypto`, `path_provider`, `open_filex`.
 -   **Versión exacta de Flutter:** pendiente de verificar con
@@ -150,8 +150,12 @@ borrado también llega a los otros celulares.
     crea, `finza_datos.json`.
 -   Combina por registro: gana la modificación más reciente, así dos
     celulares no se pisan.
--   Se sincroniza al abrir la app, después de cada cambio, al deslizar
-    hacia abajo y con "Sincronizar ahora".
+-   Se sincroniza al abrir y al volver a la app, después de cada cambio,
+    al salir de la app, al deslizar hacia abajo y con "Sincronizar ahora".
+-   **Sin conexión:** el teléfono es la fuente principal. Si no hay
+    internet o Drive está caído, los cambios quedan pendientes (aunque se
+    cierre la app) y se suben solos: reintentos cada vez más espaciados
+    (de 15 s hasta 10 min) y en el momento en que vuelve la red.
 -   Requiere configurar Google Cloud (ver README).
 
 ### Actualizaciones automáticas
@@ -191,7 +195,8 @@ Formato colombiano: punto para miles y coma para decimales. Ejemplos:
 **Hecho en octubre de 2026:** reorganización por carpetas, CRUD completo
 de movimientos y facturas, papelera, filtros, facturas recurrentes,
 recordatorios, tema oscuro, sincronización con Drive y actualizaciones
-desde el repo privado. `flutter analyze` está limpio y hay 33 pruebas
+desde el repo privado, modo sin conexión con reintentos. `flutter analyze`
+está limpio y hay 40 pruebas
 automáticas (`flutter test`).
 
 **Falta probar en el teléfono:** compilar el APK, el login con Google y la

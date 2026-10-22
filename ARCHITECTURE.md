@@ -13,7 +13,7 @@ releer todo el código. Para configurar, compilar y publicar, ver el
 | Estado | `provider`: `FinanzasProvider`, `PreferenciasProvider` y `SyncService` (ChangeNotifier); `RecordatoriosService` y `ActualizacionService` (Provider plano) |
 | Datos locales | SQLite (`sqflite`), base `finza.db` versión 3 |
 | Preferencias | `shared_preferences` (tema, filtros, recordatorios, estado de la sincronización) |
-| Sincronización | Google Drive REST v3 con `http`; login con `google_sign_in` 7 y permiso `drive.file` |
+| Sincronización | Google Drive REST v3 con `http`; login con `google_sign_in` 7 y permiso `drive.file`; `connectivity_plus` para reintentar cuando vuelve la red |
 | Recordatorios | `flutter_local_notifications` + `timezone` / `flutter_timezone` |
 | Actualizaciones | API de GitHub (repo privado, token de solo lectura), `crypto` (SHA-256), `open_filex` (instalador) |
 | Configuración | `--dart-define-from-file=finza_config.json` → `lib/config/app_config.dart` |
@@ -100,10 +100,30 @@ Sin backend: el Drive del usuario es el "servidor".
 - **Permiso `drive.file`:** Finza solo ve los archivos que creó. Guarda uno,
   `finza_datos.json`, con todos los registros (incluidos los purgados) en
   formato JSON (`toJson()` de cada modelo).
-- **Cuándo sincroniza:** al abrir la app (si hay sesión), 3 segundos después
-  de cada cambio, al deslizar hacia abajo en cualquier pestaña y con
-  "Sincronizar ahora" en Ajustes. Si se pide una mientras otra está en
-  curso, se repite al terminar.
+- **El teléfono es la fuente principal.** La app funciona igual sin
+  internet; Drive es la copia. Nunca se espera a Drive para guardar.
+- **Cuándo sincroniza:** al abrir la app (si hay cuenta vinculada), 3
+  segundos después de cada cambio, al salir de la app si hay cambios sin
+  subir, al volver a la app, cuando vuelve la red, al deslizar hacia abajo en
+  cualquier pestaña y con "Sincronizar ahora". Si se pide una mientras otra
+  está en curso, se repite al terminar.
+- **Modo sin conexión (fallback):**
+  - *Cambios pendientes:* cada cambio local guarda su hora en
+    `shared_preferences` (`drive_ultimo_cambio_local`). Hay pendientes si esa
+    hora es posterior al inicio de la última sincronización exitosa. Esto
+    sobrevive aunque se cierre la app.
+  - *Cuenta vinculada:* el correo se guarda en el teléfono
+    (`drive_cuenta`). Si al abrir la app no hay internet y Google no puede
+    recuperar la sesión, Finza no "olvida" la cuenta y lo reintenta después.
+  - *Fallas temporales* (`SyncService.esFallaTemporal`): sin red, timeout,
+    conexión cortada, Drive 408/429/5xx o error genérico de Google. El estado
+    pasa a `sinConexion` (nube con flecha, color de alerta) y se reintenta
+    solo con esperas crecientes: 15 s, 30 s, 1 min, 2 min, 5 min y luego
+    cada 10 min. Si `connectivity_plus` avisa que volvió la red, se
+    sincroniza en el momento, sin esperar el reintento.
+  - *Errores permanentes* (permiso revocado, API deshabilitada, archivo de
+    una versión más nueva): estado `error` o `sinPermiso`, sin reintento
+    automático; se vuelve a intentar al abrir la app o tras un cambio.
 - **Cómo combina** (`services/sincronizacion.dart`, función pura con tests):
   baja el archivo; por cada `uuid` gana el `actualizadoEn` más reciente; lo
   que ganó en Drive se escribe en SQLite; si algo ganó localmente, sube el
@@ -142,7 +162,7 @@ instalador. El detalle está en el README.
 | Archivo | Qué cubre |
 |---|---|
 | `test/sincronizacion_test.dart` | Reglas de combinación (gana el más reciente, borrados, formato futuro) |
-| `test/datos_test.dart` | Migración v2→v3 con SQLite real, provider (papelera, recurrentes) y `SyncService` contra un Drive simulado |
+| `test/datos_test.dart` | Migración v2→v3 con SQLite real, provider (papelera, recurrentes), `SyncService` contra un Drive simulado y modo sin conexión (Drive caído, reintentos, recuperación al volver la red) |
 | `test/actualizacion_test.dart` | Buscar, posponer, descargar y rechazar un APK dañado |
 | `test/utilidades_test.dart` | Formato de dinero, lectura de montos, fechas, estados y filtros |
 | `test/app_test.dart` | Interfaz: agregar un gasto, recorrer pestañas en modo oscuro, papelera |

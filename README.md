@@ -32,7 +32,7 @@ Contexto del proyecto (decisiones, incidencias, próximos pasos):
   - **recurrentes:** al pagarla se crea sola la del siguiente periodo (semanal, mensual, trimestral o anual).
 - **Papelera:** lo eliminado queda 30 días para restaurarlo; al eliminar aparece "Deshacer".
 - **Recordatorios:** notificación el día antes y el día del vencimiento de cada factura, a las 9:00. Banner al abrir la app si hay facturas vencidas o que vencen hoy.
-- **Sincronización con Google Drive:** respaldo automático y los mismos datos en varios celulares.
+- **Sincronización con Google Drive:** respaldo automático y los mismos datos en varios celulares. **Funciona sin conexión:** si no hay internet o Drive no responde, todo queda guardado en el teléfono como pendiente y se sube solo cuando vuelve el servicio (reintentos automáticos y al recuperar la red).
 - **Tema claro y oscuro** (o el del sistema).
 - **Actualizaciones:** al abrir, la app revisa si hay una versión nueva en este repo, la descarga, verifica que esté completa y abre el instalador.
 

@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
-import 'package:flutter/foundation.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/widgets.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/app_config.dart';
@@ -24,29 +27,64 @@ enum EstadoSync {
   sinPermiso,
   listo,
   sincronizando,
+
+  /// Sin internet o Drive no responde. Los datos siguen guardados en el
+  /// teléfono y se sincronizan solos cuando vuelva el servicio.
+  sinConexion,
+
+  /// Error que no se arregla solo reintentando (ver [SyncService.error]).
   error,
 }
 
 /// Sincroniza los datos con un archivo en el Drive del usuario, sin backend.
 ///
+/// El teléfono es la fuente principal: la app funciona igual sin internet y
+/// Drive es la copia. Si Drive no está disponible, los cambios quedan
+/// marcados como pendientes (aunque se cierre la app) y se suben solos
+/// cuando vuelve la conexión, al volver a abrir la app o en el siguiente
+/// reintento.
+///
 /// Usa el permiso `drive.file`: la app solo puede ver y modificar los
 /// archivos que ella misma creó (acá, `finza_datos.json`), nada más del
 /// Drive del usuario.
-class SyncService extends ChangeNotifier {
-  SyncService(this._finanzas, this._prefs, {DatabaseHelper? db})
-    : _db = db ?? DatabaseHelper.instance {
-    final ultima = _prefs.getString(_claveUltima);
-    ultimaSincronizacion = ultima == null ? null : DateTime.parse(ultima);
+class SyncService extends ChangeNotifier with WidgetsBindingObserver {
+  SyncService(
+    this._finanzas,
+    this._prefs, {
+    DatabaseHelper? db,
+    this._clienteHttp,
+    Stream<List<ConnectivityResult>>? conectividad,
+    Future<bool> Function()? hayRed,
+  }) : _db = db ?? DatabaseHelper.instance,
+       _hayRedPersonalizado = hayRed {
+    ultimaSincronizacion = _leerFecha(_claveUltima);
+    if (conectividad != null) _escucharConectividad(conectividad);
+    if (vinculado && AppConfig.syncConfigurado) estado = EstadoSync.listo;
   }
 
   static const nombreArchivo = 'finza_datos.json';
   static const _scopes = ['https://www.googleapis.com/auth/drive.file'];
   static const _claveArchivoId = 'drive_archivo_id';
   static const _claveUltima = 'drive_ultima_sincronizacion';
+  static const _claveUltimoCambio = 'drive_ultimo_cambio_local';
+  static const _claveCuenta = 'drive_cuenta';
+
+  /// Espera entre reintentos tras una falla temporal. Después del último,
+  /// se sigue reintentando con esa misma espera.
+  static const esperasReintento = [
+    Duration(seconds: 15),
+    Duration(seconds: 30),
+    Duration(minutes: 1),
+    Duration(minutes: 2),
+    Duration(minutes: 5),
+    Duration(minutes: 10),
+  ];
 
   final FinanzasProvider _finanzas;
   final SharedPreferences _prefs;
   final DatabaseHelper _db;
+  final http.Client? _clienteHttp;
+  final Future<bool> Function()? _hayRedPersonalizado;
   final _googleSignIn = GoogleSignIn.instance;
 
   EstadoSync estado = AppConfig.syncConfigurado
@@ -56,30 +94,57 @@ class SyncService extends ChangeNotifier {
   DateTime? ultimaSincronizacion;
   String? error;
 
-  bool _inicializado = false;
-  bool _pendiente = false;
-  Timer? _temporizador;
-  Future<void>? _enCurso;
+  /// Cuándo se va a reintentar, si la última sincronización falló por un
+  /// problema temporal.
+  DateTime? proximoReintento;
 
-  bool get conectado => cuenta != null;
+  bool _inicializado = false;
+  bool _repetirAlTerminar = false;
+  int _intentosFallidos = 0;
+  Timer? _temporizador;
+  Timer? _reintento;
+  Future<void>? _enCurso;
+  StreamSubscription<List<ConnectivityResult>>? _suscripcionRed;
+  Future<String?> Function()? _tokenDePrueba;
+
+  /// El usuario conectó Drive y no lo desconectó. Se guarda en el teléfono
+  /// para no "olvidar" la cuenta si al abrir la app no hay internet.
+  bool get vinculado => _prefs.getString(_claveCuenta) != null;
+
+  String? get email => cuenta?.email ?? _prefs.getString(_claveCuenta);
+
+  /// Hay cambios hechos en el teléfono que todavía no llegaron a Drive.
+  bool get hayCambiosPendientes {
+    final ultimoCambio = _leerFecha(_claveUltimoCambio);
+    if (ultimoCambio == null) return false;
+    return ultimaSincronizacion == null ||
+        ultimoCambio.isAfter(ultimaSincronizacion!);
+  }
+
+  DateTime? _leerFecha(String clave) {
+    final valor = _prefs.getString(clave);
+    return valor == null ? null : DateTime.tryParse(valor);
+  }
 
   Future<void> inicializar() async {
     if (!AppConfig.syncConfigurado || _inicializado) return;
     _inicializado = true;
 
+    WidgetsBinding.instance.addObserver(this);
+    _suscripcionRed ??= _escucharConectividad(
+      Connectivity().onConnectivityChanged,
+    );
+
     try {
       await _googleSignIn.initialize(
         serverClientId: AppConfig.googleServerClientId,
       );
-      // Recupera la sesión anterior sin mostrar nada.
-      final account = await _googleSignIn.attemptLightweightAuthentication();
-      if (account != null) {
-        cuenta = account;
-        await sincronizar();
-      }
     } catch (e) {
       _fallo('No se pudo iniciar Google: $e');
+      return;
     }
+
+    if (vinculado) await sincronizar();
   }
 
   /// Conecta una cuenta de Google y pide el permiso de Drive. Debe llamarse
@@ -91,13 +156,12 @@ class SyncService extends ChangeNotifier {
     try {
       cuenta = await _googleSignIn.authenticate(scopeHint: _scopes);
       await cuenta!.authorizationClient.authorizeScopes(_scopes);
+      await _prefs.setString(_claveCuenta, cuenta!.email);
       error = null;
       await sincronizar();
     } on GoogleSignInException catch (e) {
       if (e.code == GoogleSignInExceptionCode.canceled) {
-        estado = cuenta == null
-            ? EstadoSync.desconectado
-            : EstadoSync.sinPermiso;
+        estado = vinculado ? EstadoSync.sinPermiso : EstadoSync.desconectado;
         notifyListeners();
         return;
       }
@@ -111,22 +175,29 @@ class SyncService extends ChangeNotifier {
   /// como están.
   Future<void> desconectar() async {
     _temporizador?.cancel();
+    _cancelarReintento();
     try {
       await _googleSignIn.disconnect();
     } catch (_) {
-      // Si falla la revocación, igual se olvida la cuenta localmente.
+      // Si falla la revocación (por ejemplo, sin internet), igual se olvida
+      // la cuenta en el teléfono.
     }
     cuenta = null;
     error = null;
     estado = EstadoSync.desconectado;
     await _prefs.remove(_claveArchivoId);
+    await _prefs.remove(_claveCuenta);
     notifyListeners();
   }
 
-  /// Agenda una sincronización unos segundos después del último cambio, para
-  /// no subir el archivo en cada tecla.
+  /// Se llama después de cada cambio local. Lo marca como pendiente (queda
+  /// guardado aunque se cierre la app) y agenda la subida unos segundos
+  /// después, para no subir el archivo en cada tecla.
   void programarSincronizacion() {
-    if (!conectado) return;
+    _prefs.setString(_claveUltimoCambio, DateTime.now().toIso8601String());
+    if (!vinculado) return;
+
+    notifyListeners();
     _temporizador?.cancel();
     _temporizador = Timer(const Duration(seconds: 3), sincronizar);
   }
@@ -135,13 +206,15 @@ class SyncService extends ChangeNotifier {
   /// resultado si hay algo nuevo acá. Si ya hay una en curso, se repite al
   /// terminar.
   Future<void> sincronizar() async {
-    if (!conectado) return;
+    if (!vinculado) return;
 
     if (_enCurso != null) {
-      _pendiente = true;
+      _repetirAlTerminar = true;
       return _enCurso;
     }
 
+    _temporizador?.cancel();
+    _cancelarReintento();
     _enCurso = _sincronizarConReintento();
     try {
       await _enCurso;
@@ -149,18 +222,21 @@ class SyncService extends ChangeNotifier {
       _enCurso = null;
     }
 
-    if (_pendiente) {
-      _pendiente = false;
+    if (_repetirAlTerminar) {
+      _repetirAlTerminar = false;
       await sincronizar();
     }
   }
 
   Future<void> _sincronizarConReintento() async {
+    final inicio = DateTime.now();
     estado = EstadoSync.sincronizando;
     error = null;
     notifyListeners();
 
     try {
+      if (!await _hayRed()) throw const SocketException('Sin conexión');
+
       final token = await _tokenDeAcceso();
       if (token == null) {
         estado = EstadoSync.sinPermiso;
@@ -169,9 +245,9 @@ class SyncService extends ChangeNotifier {
       }
 
       try {
-        await sincronizarCon(DriveApi(token));
+        await sincronizarCon(_drive(token));
       } on DriveException catch (e) {
-        if (!e.noAutorizado) rethrow;
+        if (!e.noAutorizado || cuenta == null) rethrow;
         // Token vencido: se descarta y se intenta una vez con uno nuevo.
         await cuenta!.authorizationClient.clearAuthorizationToken(
           accessToken: token,
@@ -182,26 +258,136 @@ class SyncService extends ChangeNotifier {
           notifyListeners();
           return;
         }
-        await sincronizarCon(DriveApi(nuevo));
+        await sincronizarCon(_drive(nuevo));
       }
 
-      ultimaSincronizacion = DateTime.now();
-      await _prefs.setString(
-        _claveUltima,
-        ultimaSincronizacion!.toIso8601String(),
-      );
+      // Se guarda la hora de inicio: un cambio hecho mientras se subía el
+      // archivo queda después y sigue contando como pendiente.
+      ultimaSincronizacion = inicio;
+      await _prefs.setString(_claveUltima, inicio.toIso8601String());
+      _intentosFallidos = 0;
       estado = EstadoSync.listo;
       notifyListeners();
     } catch (e) {
-      _fallo(e is DriveException ? e.mensaje : '$e');
+      if (esFallaTemporal(e)) {
+        _sinConexion(e);
+      } else {
+        _fallo(e is DriveException ? e.mensaje : '$e');
+      }
     }
   }
 
-  /// Token de Drive sin mostrar interfaz, o null si hace falta pedir permiso.
+  DriveApi _drive(String token) => DriveApi(token, cliente: _clienteHttp);
+
+  Future<bool> _hayRed() async {
+    if (_hayRedPersonalizado != null) return _hayRedPersonalizado();
+    try {
+      final resultado = await Connectivity().checkConnectivity();
+      return !resultado.every((r) => r == ConnectivityResult.none);
+    } catch (_) {
+      return true; // Si no se puede saber, se intenta igual.
+    }
+  }
+
+  /// Token de Drive sin mostrar interfaz, o null si hace falta que el
+  /// usuario vuelva a dar permiso.
   Future<String?> _tokenDeAcceso() async {
+    if (_tokenDePrueba != null) return _tokenDePrueba!();
+
+    // Al abrir la app se recupera la sesión sin mostrar nada.
+    cuenta ??= await _googleSignIn.attemptLightweightAuthentication();
+    if (cuenta == null) return null;
+
     final autorizacion = await cuenta!.authorizationClient
         .authorizationForScopes(_scopes);
     return autorizacion?.accessToken;
+  }
+
+  /// Fallas que se arreglan solas: sin internet, Drive caído o saturado.
+  @visibleForTesting
+  static bool esFallaTemporal(Object e) {
+    if (e is SocketException ||
+        e is TimeoutException ||
+        e is HandshakeException ||
+        e is http.ClientException) {
+      return true;
+    }
+    if (e is DriveException) {
+      return e.codigo == 408 || e.codigo == 429 || e.codigo >= 500;
+    }
+    if (e is GoogleSignInException) {
+      // Sin internet, Google suele responder con un error genérico. Los de
+      // configuración no se arreglan reintentando.
+      return e.code != GoogleSignInExceptionCode.clientConfigurationError &&
+          e.code != GoogleSignInExceptionCode.providerConfigurationError;
+    }
+    return false;
+  }
+
+  void _sinConexion(Object causa) {
+    debugPrint('Sincronización: sin conexión ($causa)');
+    final espera =
+        esperasReintento[_intentosFallidos.clamp(
+          0,
+          esperasReintento.length - 1,
+        )];
+    _intentosFallidos++;
+
+    estado = EstadoSync.sinConexion;
+    error = null;
+    proximoReintento = DateTime.now().add(espera);
+    _reintento = Timer(espera, sincronizar);
+    notifyListeners();
+  }
+
+  void _cancelarReintento() {
+    _reintento?.cancel();
+    _reintento = null;
+    proximoReintento = null;
+  }
+
+  StreamSubscription<List<ConnectivityResult>> _escucharConectividad(
+    Stream<List<ConnectivityResult>> cambios,
+  ) {
+    return _suscripcionRed = cambios.listen((resultado) {
+      final hayRed = !resultado.every((r) => r == ConnectivityResult.none);
+      // Volvió la red: no se espera al próximo reintento.
+      if (hayRed &&
+          vinculado &&
+          (estado == EstadoSync.sinConexion || hayCambiosPendientes)) {
+        _intentosFallidos = 0;
+        sincronizar();
+      }
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!vinculado) return;
+
+    if (state == AppLifecycleState.resumed) {
+      final hace = ultimaSincronizacion == null
+          ? null
+          : DateTime.now().difference(ultimaSincronizacion!);
+      if (hayCambiosPendientes ||
+          estado == EstadoSync.sinConexion ||
+          estado == EstadoSync.error ||
+          hace == null ||
+          hace > const Duration(minutes: 5)) {
+        _intentosFallidos = 0;
+        sincronizar();
+      }
+    } else if (state == AppLifecycleState.paused && hayCambiosPendientes) {
+      // Al salir de la app no se esperan los 3 segundos: se sube ya.
+      sincronizar();
+    }
+  }
+
+  /// Simula una cuenta conectada para los tests (sin Google).
+  @visibleForTesting
+  Future<void> conectarParaPruebas(Future<String?> Function() token) async {
+    _tokenDePrueba = token;
+    await _prefs.setString(_claveCuenta, 'prueba@finza.app');
   }
 
   /// Un ciclo de sincronización con [drive]. Público solo para los tests.
@@ -277,6 +463,9 @@ class SyncService extends ChangeNotifier {
   @override
   void dispose() {
     _temporizador?.cancel();
+    _reintento?.cancel();
+    _suscripcionRed?.cancel();
+    if (_inicializado) WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 }

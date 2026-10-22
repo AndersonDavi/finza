@@ -7,6 +7,7 @@ import '../theme/app_theme.dart';
 import '../utils/estado_factura.dart';
 import '../widgets/acciones.dart';
 import '../widgets/dialogo_actualizacion.dart';
+import '../widgets/estado_sync_visual.dart';
 import '../widgets/top_notification_banner.dart';
 import 'ajustes_screen.dart';
 import 'estadisticas_screen.dart';
@@ -180,7 +181,7 @@ class _IconoSincronizacion extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final sync = context.watch<SyncService>();
-    if (!sync.conectado) return const SizedBox.shrink();
+    if (!sync.vinculado) return const SizedBox.shrink();
 
     if (sync.estado == EstadoSync.sincronizando) {
       return const Padding(
@@ -193,15 +194,11 @@ class _IconoSincronizacion extends StatelessWidget {
       );
     }
 
-    final conProblema =
-        sync.estado == EstadoSync.error || sync.estado == EstadoSync.sinPermiso;
+    final visual = estadoSyncVisual(context, sync);
 
     return IconButton(
-      tooltip: conProblema ? 'Error al sincronizar' : 'Sincronizado con Drive',
-      icon: Icon(
-        conProblema ? Icons.cloud_off_outlined : Icons.cloud_done_outlined,
-        color: conProblema ? ColoresFinza.de(context).gasto : null,
-      ),
+      tooltip: visual.texto,
+      icon: Icon(visual.icono, color: visual.color),
       onPressed: () =>
           Navigator.of(context)
               .push(MaterialPageRoute(builder: (_) => const AjustesScreen())),

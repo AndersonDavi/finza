@@ -19,6 +19,12 @@ String formatearFecha(DateTime fecha) {
       '${fecha.year}';
 }
 
+/// `hh:mm` en formato de 24 horas.
+String formatearHora(DateTime fecha) {
+  return '${fecha.hour.toString().padLeft(2, '0')}:'
+      '${fecha.minute.toString().padLeft(2, '0')}';
+}
+
 /// Convierte lo que escribe el usuario en un monto. Acepta `80000`,
 /// `80.000`, `80.000,50` y `80000.50`.
 double? leerMonto(String texto) {
