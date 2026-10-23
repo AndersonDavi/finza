@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -13,9 +15,14 @@ import '../utils/fechas.dart';
 import '../utils/formato.dart';
 
 /// Recordatorios locales de facturas, a la hora y con los días de
-/// anticipación que el usuario elige en Ajustes. No usan servidor (a diferencia de las push de
-/// top-list): Android los dispara aunque la app esté cerrada.
-class RecordatoriosService {
+/// anticipación que el usuario elige en Ajustes. Son notificaciones del
+/// sistema que programa Android: llegan aunque la app esté cerrada y no
+/// usan servidor (a diferencia de las push de top-list).
+///
+/// Se programan como alarmas exactas si Android lo permite ("Alarmas y
+/// recordatorios"); si no, como inexactas, que llegan igual pero pueden
+/// retrasarse unos minutos.
+class RecordatoriosService with WidgetsBindingObserver {
   RecordatoriosService(this._prefs);
 
   static const _canal = AndroidNotificationDetails(
@@ -35,6 +42,12 @@ class RecordatoriosService {
   bool _listo = false;
   String? _ultimaFirma;
   Timer? _temporizador;
+  ({List<Factura> facturas, bool activos, ConfigRecordatorios config})?
+  _ultimosDatos;
+
+  /// Si Android permite programar los avisos a la hora exacta. La pantalla
+  /// de avisos lo escucha para ofrecer el permiso cuando falta.
+  final exactos = ValueNotifier<bool>(false);
 
   /// Solo en Android y si el plugin se pudo iniciar.
   bool get disponible => _listo;
@@ -71,9 +84,57 @@ class RecordatoriosService {
       }
 
       _listo = true;
+      await _revisarExactos();
+      WidgetsBinding.instance.addObserver(this);
     } catch (e) {
       debugPrint('Recordatorios: no se pudieron iniciar: $e');
     }
+  }
+
+  /// Al volver a la app (por ejemplo, desde la pantalla del permiso) se
+  /// revisa si cambió el permiso de alarmas exactas. Si se quitó, Android
+  /// borra las alarmas exactas de la app, así que se reprograma todo.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) unawaited(_reprogramarSiCambio());
+  }
+
+  Future<void> _reprogramarSiCambio() async {
+    if (!_listo || !await _revisarExactos()) return;
+    final datos = _ultimosDatos;
+    if (datos == null) return;
+    _ultimaFirma = null;
+    programar(datos.facturas, activos: datos.activos, config: datos.config);
+  }
+
+  /// Actualiza [exactos]. Devuelve true si cambió.
+  Future<bool> _revisarExactos() async {
+    final android = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+    final permitidos = await android?.canScheduleExactNotifications() ?? false;
+    if (permitidos == exactos.value) return false;
+    exactos.value = permitidos;
+    return true;
+  }
+
+  /// Abre la pantalla de Android para permitir las alarmas exactas y, al
+  /// volver, reprograma los avisos. Devuelve si quedaron permitidas.
+  Future<bool> pedirAvisosExactos() async {
+    if (!_listo) return false;
+    final android = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+    try {
+      await android?.requestExactAlarmsPermission();
+    } on PlatformException catch (e) {
+      // Ya había otra solicitud de permiso abierta.
+      debugPrint('Recordatorios: no se pudo pedir alarmas exactas: $e');
+    }
+    await _reprogramarSiCambio();
+    return exactos.value;
   }
 
   /// Reprograma todos los avisos. Se puede llamar seguido: espera un momento
@@ -83,6 +144,7 @@ class RecordatoriosService {
     required bool activos,
     required ConfigRecordatorios config,
   }) {
+    _ultimosDatos = (facturas: facturas, activos: activos, config: config);
     _temporizador?.cancel();
     _temporizador = Timer(
       const Duration(milliseconds: 500),
@@ -97,12 +159,14 @@ class RecordatoriosService {
   }) async {
     if (!_listo) return;
 
+    await _revisarExactos();
     final avisos = activos
         ? calcularAvisos(facturas, config).take(_maximoAvisos).toList()
         : <AvisoFactura>[];
-    final firma = avisos
+    final avisosFirma = avisos
         .map((a) => '${a.cuando}|${a.titulo}|${a.cuerpo}')
         .join(';');
+    final firma = '${exactos.value};$avisosFirma';
     if (firma == _ultimaFirma) return;
     _ultimaFirma = firma;
 
@@ -113,17 +177,30 @@ class RecordatoriosService {
 
     for (var i = 0; i < avisos.length; i++) {
       final aviso = avisos[i];
-      await _plugin.zonedSchedule(
+      Future<void> agendar(AndroidScheduleMode modo) => _plugin.zonedSchedule(
         id: i,
         title: aviso.titulo,
         body: aviso.cuerpo,
         scheduledDate: tz.TZDateTime.from(aviso.cuando, tz.local),
         notificationDetails: const NotificationDetails(android: _canal),
-        // Inexacto: no necesita el permiso de alarmas exactas y un aviso
-        // de factura no tiene que llegar al segundo.
-        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        androidScheduleMode: modo,
         payload: 'facturas',
       );
+
+      if (!exactos.value) {
+        await agendar(AndroidScheduleMode.inexactAllowWhileIdle);
+        continue;
+      }
+      try {
+        await agendar(AndroidScheduleMode.exactAllowWhileIdle);
+      } on PlatformException catch (e) {
+        // El permiso se quitó justo ahora: el aviso no se pierde, queda
+        // como inexacto (y los siguientes también).
+        debugPrint('Recordatorios: sin alarmas exactas, se usa inexacto: $e');
+        exactos.value = false;
+        _ultimaFirma = null;
+        await agendar(AndroidScheduleMode.inexactAllowWhileIdle);
+      }
     }
   }
 

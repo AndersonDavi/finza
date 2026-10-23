@@ -161,6 +161,12 @@ borrado también llega a los otros celulares.
     aviso diario durante 7 días si se vence. Muestra los próximos avisos y
     tiene "Probar notificación". Por defecto: el día antes y el mismo día
     a las 9:00.
+-   Son notificaciones del sistema (Android las dispara con la app
+    cerrada). Se programan como alarmas exactas si el usuario concede
+    `SCHEDULE_EXACT_ALARM` ("Alarmas y recordatorios", tarjeta "Activa la
+    hora exacta"); si no, como inexactas. Al volver a la app se revisa el
+    permiso y se reprograma si cambió (Android borra las exactas al
+    quitarlo).
 -   Banner al abrir la app si hay facturas vencidas o que vencen hoy.
 
 ### Papelera
@@ -223,7 +229,8 @@ recordatorios, tema oscuro, sincronización con Drive y actualizaciones
 desde el repo privado, modo sin conexión con reintentos. Después:
 selector de periodo, estadísticas con gráficas, formulario rápido, lista
 agrupada por día con deslizar para eliminar, avisos configurables,
-ocultar montos y bienvenida. `flutter analyze` está limpio y hay 76
+ocultar montos, bienvenida y avisos a la hora exacta. `flutter analyze`
+está limpio y hay 81
 pruebas automáticas (`flutter test`).
 
 **Falta probar en el teléfono:** compilar el APK, el login con Google y la

@@ -5,6 +5,7 @@ import '../providers/preferencias_provider.dart';
 import '../services/recordatorios_service.dart';
 import '../services/sync_service.dart';
 import '../utils/formato.dart';
+import 'recordatorios_screen.dart';
 
 /// Pantallas de la primera vez: qué hace Finza, conectar Drive (opcional) y
 /// activar los avisos de facturas. Todo se puede cambiar luego en Ajustes.
@@ -253,49 +254,57 @@ class _PaginaAvisos extends StatelessWidget {
       texto:
           'Finza te avisa antes de que se venza una factura, aunque la app '
           'esté cerrada.',
-      contenido: Card(
-        margin: EdgeInsets.zero,
-        child: Column(
-          children: [
-            SwitchListTile(
-              title: const Text('Activar avisos'),
-              subtitle: Text(config.descripcionDias),
-              value: preferencias.recordatoriosActivos,
-              onChanged: (activos) async {
-                preferencias.recordatoriosActivos = activos;
-                if (activos) {
-                  await context.read<RecordatoriosService>().pedirPermiso();
-                }
-              },
-            ),
-            ListTile(
-              enabled: preferencias.recordatoriosActivos,
-              title: const Text('Hora del aviso'),
-              trailing: Text(
-                formatearHora(config.comoFecha),
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
+      contenido: Column(
+        children: [
+          Card(
+            margin: EdgeInsets.zero,
+            child: Column(
+              children: [
+                SwitchListTile(
+                  title: const Text('Activar avisos'),
+                  subtitle: Text(config.descripcionDias),
+                  value: preferencias.recordatoriosActivos,
+                  onChanged: (activos) async {
+                    preferencias.recordatoriosActivos = activos;
+                    if (activos) {
+                      await context.read<RecordatoriosService>().pedirPermiso();
+                    }
+                  },
                 ),
-              ),
-              onTap: () async {
-                final hora = await showTimePicker(
-                  context: context,
-                  initialTime: TimeOfDay(
-                    hour: config.hora,
-                    minute: config.minuto,
+                ListTile(
+                  enabled: preferencias.recordatoriosActivos,
+                  title: const Text('Hora del aviso'),
+                  trailing: Text(
+                    formatearHora(config.comoFecha),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                );
-                if (hora != null) {
-                  preferencias.configRecordatorios = config.copyWith(
-                    hora: hora.hour,
-                    minuto: hora.minute,
-                  );
-                }
-              },
+                  onTap: () async {
+                    final hora = await showTimePicker(
+                      context: context,
+                      initialTime: TimeOfDay(
+                        hour: config.hora,
+                        minute: config.minuto,
+                      ),
+                    );
+                    if (hora != null) {
+                      preferencias.configRecordatorios = config.copyWith(
+                        hora: hora.hour,
+                        minuto: hora.minute,
+                      );
+                    }
+                  },
+                ),
+              ],
             ),
+          ),
+          if (preferencias.recordatoriosActivos) ...[
+            const SizedBox(height: 8),
+            const AvisoAlarmasExactas(),
           ],
-        ),
+        ],
       ),
     );
   }

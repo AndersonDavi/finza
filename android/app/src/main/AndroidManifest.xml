@@ -7,6 +7,10 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <!-- Recordatorios de facturas: volver a programarlos tras reiniciar. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <!-- Recordatorios a la hora exacta. En Android 14+ el usuario lo concede
+         en "Alarmas y recordatorios"; sin él, los avisos llegan igual pero
+         pueden retrasarse unos minutos. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
     <!-- open_filex los declara para abrir fotos y videos; Finza solo abre su
          propio APK, así que no los necesita. -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" tools:node="remove"/>

@@ -97,6 +97,7 @@ class RecordatoriosScreen extends StatelessWidget {
               }
             },
           ),
+          if (activos) const AvisoAlarmasExactas(),
           const Divider(),
           ListTile(
             enabled: activos,
@@ -186,6 +187,69 @@ class RecordatoriosScreen extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Si Android no deja programar alarmas exactas, explica que los avisos
+/// pueden llegar tarde y lleva a la pantalla del permiso. Si ya se tiene,
+/// lo confirma. Fuera de Android no muestra nada.
+class AvisoAlarmasExactas extends StatelessWidget {
+  const AvisoAlarmasExactas({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final servicio = context.read<RecordatoriosService>();
+    if (!servicio.disponible) return const SizedBox.shrink();
+
+    return ValueListenableBuilder<bool>(
+      valueListenable: servicio.exactos,
+      builder: (context, exactos, _) {
+        final colorScheme = Theme.of(context).colorScheme;
+
+        if (exactos) {
+          return ListTile(
+            leading: Icon(Icons.alarm_on, color: colorScheme.primary),
+            title: const Text('Llegan a la hora exacta'),
+          );
+        }
+
+        return Card(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          color: colorScheme.secondaryContainer,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.alarm, color: colorScheme.onSecondaryContainer),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Text(
+                        'Activa la hora exacta',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Sin este permiso los avisos llegan igual, pero pueden '
+                  'retrasarse unos minutos. En la pantalla que se abre, '
+                  'activa "Permitir alarmas y recordatorios" para Finza.',
+                ),
+                const SizedBox(height: 12),
+                FilledButton(
+                  onPressed: servicio.pedirAvisosExactos,
+                  child: const Text('Permitir'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

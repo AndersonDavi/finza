@@ -35,7 +35,7 @@ Contexto del proyecto (decisiones, incidencias, próximos pasos):
   - chip de estado tocable para marcar pagada o pendiente;
   - **recurrentes:** al pagarla se crea sola la del siguiente periodo (semanal, mensual, trimestral o anual).
 - **Papelera:** lo eliminado queda 30 días para restaurarlo; al eliminar aparece "Deshacer".
-- **Recordatorios:** en Ajustes > Avisos de facturas se elige la hora, con cuántos días de anticipación avisar (el mismo día, 1, 2, 3, 5, 7 o 15 días antes, varios a la vez) y si seguir avisando a diario cuando se vence. Muestra los próximos avisos y tiene **Probar notificación**. Banner al abrir la app si hay facturas vencidas o que vencen hoy.
+- **Recordatorios:** en Ajustes > Avisos de facturas se elige la hora, con cuántos días de anticipación avisar (el mismo día, 1, 2, 3, 5, 7 o 15 días antes, varios a la vez) y si seguir avisando a diario cuando se vence. Muestra los próximos avisos y tiene **Probar notificación**. Son notificaciones del sistema Android: llegan a la barra aunque Finza esté cerrada y **a la hora exacta** si se permite "Alarmas y recordatorios" (la app ofrece el botón **Permitir**; sin ese permiso llegan igual, con unos minutos de margen). Banner al abrir la app si hay facturas vencidas o que vencen hoy.
 - **Ocultar montos:** el ojo de la barra superior cambia los montos por `$ ••••`.
 - **Sincronización con Google Drive:** respaldo automático y los mismos datos en varios celulares. **Funciona sin conexión:** si no hay internet o Drive no responde, todo queda guardado en el teléfono como pendiente y se sube solo cuando vuelve el servicio (reintentos automáticos y al recuperar la red).
 - **Tema claro y oscuro** (o el del sistema).
