@@ -9,10 +9,11 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   group('formato', () {
     test('formatearDinero usa formato colombiano', () {
-      expect(formatearDinero(15000), '\$15.000,00');
+      expect(formatearDinero(15000), '\$15.000');
       expect(formatearDinero(1500000.5), '\$1.500.000,50');
       expect(formatearDinero(-25000.75), '-\$25.000,75');
-      expect(formatearDinero(0), '\$0,00');
+      expect(formatearDinero(0), '\$0');
+      expect(formatearDinero(999.999), '\$1.000');
     });
 
     test('leerMonto entiende lo que escribe el usuario', () {

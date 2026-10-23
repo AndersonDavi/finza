@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/factura.dart';
 import '../utils/estado_factura.dart';
 import '../utils/formato.dart';
+import 'monto.dart';
 import 'estado_factura_chip.dart';
 
 class TarjetaFactura extends StatelessWidget {
@@ -57,7 +58,7 @@ class TarjetaFactura extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    formatearDinero(factura.monto),
+                    context.dinero(factura.monto),
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,

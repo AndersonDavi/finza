@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/finanzas_provider.dart';
+import '../providers/preferencias_provider.dart';
 import '../services/sync_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/estado_factura.dart';
@@ -124,6 +125,7 @@ class _HomeShellState extends State<HomeShell> {
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         actions: [
+          const _BotonOcultarMontos(),
           const _IconoSincronizacion(),
           IconButton(
             tooltip: 'Ajustes',
@@ -169,6 +171,25 @@ class _HomeShellState extends State<HomeShell> {
         ],
       ),
       floatingActionButton: _botonAgregar(tab),
+    );
+  }
+}
+
+/// Ojo para ocultar o mostrar los montos (para usar la app en público).
+class _BotonOcultarMontos extends StatelessWidget {
+  const _BotonOcultarMontos();
+
+  @override
+  Widget build(BuildContext context) {
+    final preferencias = context.watch<PreferenciasProvider>();
+    final ocultos = preferencias.ocultarMontos;
+
+    return IconButton(
+      tooltip: ocultos ? 'Mostrar montos' : 'Ocultar montos',
+      icon: Icon(
+        ocultos ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+      ),
+      onPressed: () => preferencias.ocultarMontos = !ocultos,
     );
   }
 }

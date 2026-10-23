@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/finanzas_provider.dart';
+import '../providers/preferencias_provider.dart';
 import '../services/sync_service.dart';
+import '../utils/estadisticas.dart';
 import '../utils/estado_factura.dart';
-import '../widgets/acciones.dart';
 import '../widgets/estado_vacio.dart';
-import '../widgets/tarjeta_movimiento.dart';
+import '../widgets/lista_movimientos.dart';
+import '../widgets/monto.dart';
+import '../widgets/selector_periodo.dart';
 import '../widgets/tarjeta_resumen.dart';
 import 'home_shell.dart';
 
@@ -16,11 +19,11 @@ class InicioScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final finanzas = context.watch<FinanzasProvider>();
+    final periodo = context.watch<PreferenciasProvider>().periodo;
 
-    if (finanzas.cargando) {
-      return const Center(child: CircularProgressIndicator());
-    }
+    if (finanzas.cargando) return const Esqueleto();
 
+    final resumen = ResumenPeriodo.de(finanzas.movimientos, periodo);
     final recientes = finanzas.movimientos.take(5).toList();
     final porVencer = finanzas.facturas.where((f) {
       final estado = estadoDeFactura(f);
@@ -33,32 +36,20 @@ class InicioScreen extends StatelessWidget {
       onRefresh: () => context.read<SyncService>().sincronizar(),
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
         children: [
-          TarjetaSaldo(saldo: finanzas.saldo),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: TarjetaResumen(
-                  esIngreso: true,
-                  valor: finanzas.totalIngresos,
-                  centrada: true,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: TarjetaResumen(
-                  esIngreso: false,
-                  valor: finanzas.totalGastos,
-                  centrada: true,
-                ),
-              ),
-            ],
+          const SelectorPeriodo(),
+          const SizedBox(height: 12),
+          TarjetaBalance(
+            titulo: 'Balance ${periodo.nombreCorto}',
+            ingresos: resumen.ingresos,
+            gastos: resumen.gastos,
+            saldoTotal: finanzas.saldo,
           ),
           if (porVencer > 0) ...[
             const SizedBox(height: 12),
             Card(
+              margin: EdgeInsets.zero,
               child: ListTile(
                 leading: const Icon(Icons.receipt_long),
                 title: Text(
@@ -72,11 +63,23 @@ class InicioScreen extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 24),
-          const Text(
-            'Movimientos recientes',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Movimientos recientes',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+              ),
+              if (recientes.isNotEmpty)
+                TextButton(
+                  onPressed: () =>
+                      HomeShell.tabIndex.value = HomeShell.tabMovimientos,
+                  child: const Text('Ver todos'),
+                ),
+            ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 6),
           if (recientes.isEmpty)
             const Card(
               child: EstadoVacio(
@@ -86,11 +89,7 @@ class InicioScreen extends StatelessWidget {
               ),
             )
           else
-            for (final movimiento in recientes)
-              TarjetaMovimiento(
-                movimiento: movimiento,
-                onTap: () => mostrarOpcionesMovimiento(context, movimiento),
-              ),
+            ListaMovimientos(movimientos: recientes, comoColumna: true),
         ],
       ),
     );

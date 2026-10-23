@@ -7,12 +7,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
+import '../models/config_recordatorios.dart';
 import '../models/factura.dart';
 import '../utils/fechas.dart';
 import '../utils/formato.dart';
 
-/// Recordatorios locales de facturas: el día anterior y el día del
-/// vencimiento, a las 9:00. No usan servidor (a diferencia de las push de
+/// Recordatorios locales de facturas, a la hora y con los días de
+/// anticipación que el usuario elige en Ajustes. No usan servidor (a diferencia de las push de
 /// top-list): Android los dispara aunque la app esté cerrada.
 class RecordatoriosService {
   RecordatoriosService(this._prefs);
@@ -24,7 +25,6 @@ class RecordatoriosService {
     importance: Importance.high,
     priority: Priority.high,
   );
-  static const _horaAviso = 9;
 
   /// Android limita las alarmas por app; con esto sobra.
   static const _maximoAvisos = 60;
@@ -35,6 +35,9 @@ class RecordatoriosService {
   bool _listo = false;
   String? _ultimaFirma;
   Timer? _temporizador;
+
+  /// Solo en Android y si el plugin se pudo iniciar.
+  bool get disponible => _listo;
 
   /// Se llama al tocar una notificación (abre la pestaña de Facturas).
   VoidCallback? alTocarNotificacion;
@@ -75,21 +78,28 @@ class RecordatoriosService {
 
   /// Reprograma todos los avisos. Se puede llamar seguido: espera un momento
   /// y no hace nada si las facturas pendientes no cambiaron.
-  void programar(List<Factura> facturas, {required bool activos}) {
+  void programar(
+    List<Factura> facturas, {
+    required bool activos,
+    required ConfigRecordatorios config,
+  }) {
     _temporizador?.cancel();
     _temporizador = Timer(
       const Duration(milliseconds: 500),
-      () => _programar(facturas, activos: activos),
+      () => _programar(facturas, activos: activos, config: config),
     );
   }
 
   Future<void> _programar(
     List<Factura> facturas, {
     required bool activos,
+    required ConfigRecordatorios config,
   }) async {
     if (!_listo) return;
 
-    final avisos = activos ? _calcularAvisos(facturas) : <_Aviso>[];
+    final avisos = activos
+        ? calcularAvisos(facturas, config).take(_maximoAvisos).toList()
+        : <AvisoFactura>[];
     final firma = avisos
         .map((a) => '${a.cuando}|${a.titulo}|${a.cuerpo}')
         .join(';');
@@ -117,35 +127,41 @@ class RecordatoriosService {
     }
   }
 
-  List<_Aviso> _calcularAvisos(List<Factura> facturas) {
-    final ahora = DateTime.now();
-    final avisos = <_Aviso>[];
+  /// Muestra ya mismo un aviso de ejemplo, para ver cómo se ve. Usa la
+  /// próxima factura pendiente si hay alguna. Devuelve false si no se pudo
+  /// (sin permiso o fuera de Android).
+  Future<bool> probar(List<Factura> facturas) async {
+    if (!_listo) return false;
+    final android = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+    final activas = await android?.areNotificationsEnabled() ?? false;
+    if (!activas && !await pedirPermiso()) return false;
 
-    for (final factura in facturas.where((f) => !f.pagada)) {
-      final vence = soloFecha(factura.fechaVencimiento);
-      final monto = formatearDinero(factura.monto);
+    final pendientes = facturas.where((f) => !f.pagada).toList()
+      ..sort((a, b) => a.fechaVencimiento.compareTo(b.fechaVencimiento));
+    final ejemplo = pendientes.isEmpty
+        ? (titulo: 'Internet vence mañana', cuerpo: 'Pago de \$80.000.')
+        : textoAviso(
+            pendientes.first,
+            soloFecha(pendientes.first.fechaVencimiento)
+                .difference(soloFecha(DateTime.now()))
+                .inDays
+                .clamp(0, 365),
+          );
 
-      final diaAntes = vence.subtract(const Duration(days: 1));
-      avisos.add(
-        _Aviso(
-          DateTime(diaAntes.year, diaAntes.month, diaAntes.day, _horaAviso),
-          '${factura.nombre} vence mañana',
-          'Pago de $monto.',
-        ),
-      );
-      avisos.add(
-        _Aviso(
-          DateTime(vence.year, vence.month, vence.day, _horaAviso),
-          '${factura.nombre} vence hoy',
-          'Pago de $monto. Márcala como pagada en Finza.',
-        ),
-      );
-    }
-
-    final futuros = avisos.where((a) => a.cuando.isAfter(ahora)).toList()
-      ..sort((a, b) => a.cuando.compareTo(b.cuando));
-    return futuros.take(_maximoAvisos).toList();
+    await _plugin.show(
+      id: _idPrueba,
+      title: ejemplo.titulo,
+      body: ejemplo.cuerpo,
+      notificationDetails: const NotificationDetails(android: _canal),
+      payload: 'facturas',
+    );
+    return true;
   }
+
+  static const _idPrueba = 100000;
 
   /// Android 13+ exige pedir permiso para notificaciones. Se pide la primera
   /// vez que hay algo para avisar, no al abrir la app.
@@ -164,10 +180,73 @@ class RecordatoriosService {
   }
 }
 
-class _Aviso {
-  _Aviso(this.cuando, this.titulo, this.cuerpo);
+class AvisoFactura {
+  AvisoFactura(this.cuando, this.titulo, this.cuerpo);
 
   final DateTime cuando;
   final String titulo;
   final String cuerpo;
+}
+
+/// Título y texto del aviso de [factura] a [dias] del vencimiento (negativo
+/// si ya se venció).
+({String titulo, String cuerpo}) textoAviso(Factura factura, int dias) {
+  final monto = formatearDinero(factura.monto);
+  final nombre = factura.nombre;
+
+  if (dias < 0) {
+    final vencida = -dias;
+    return (
+      titulo: '$nombre lleva $vencida día${vencida == 1 ? '' : 's'} vencida',
+      cuerpo: 'Pago de $monto. Márcala como pagada en Finza.',
+    );
+  }
+  return switch (dias) {
+    0 => (
+      titulo: '$nombre vence hoy',
+      cuerpo: 'Pago de $monto. Márcala como pagada en Finza.',
+    ),
+    1 => (titulo: '$nombre vence mañana', cuerpo: 'Pago de $monto.'),
+    _ => (titulo: '$nombre vence en $dias días', cuerpo: 'Pago de $monto.'),
+  };
+}
+
+/// Todos los avisos futuros de las facturas pendientes según [config],
+/// ordenados del más próximo al más lejano.
+List<AvisoFactura> calcularAvisos(
+  List<Factura> facturas,
+  ConfigRecordatorios config, {
+  DateTime? ahora,
+}) {
+  final momento = ahora ?? DateTime.now();
+  final avisos = <AvisoFactura>[];
+
+  final dias = [
+    ...config.diasAntes,
+    if (config.insistirVencidas)
+      for (var i = 1; i <= ConfigRecordatorios.diasInsistiendo; i++) -i,
+  ];
+
+  for (final factura in facturas.where((f) => !f.pagada)) {
+    final vence = soloFecha(factura.fechaVencimiento);
+    for (final antes in dias) {
+      final texto = textoAviso(factura, antes);
+      avisos.add(
+        AvisoFactura(
+          DateTime(
+            vence.year,
+            vence.month,
+            vence.day - antes,
+            config.hora,
+            config.minuto,
+          ),
+          texto.titulo,
+          texto.cuerpo,
+        ),
+      );
+    }
+  }
+
+  return avisos.where((a) => a.cuando.isAfter(momento)).toList()
+    ..sort((a, b) => a.cuando.compareTo(b.cuando));
 }

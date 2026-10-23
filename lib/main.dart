@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'app_info.dart';
 import 'providers/finanzas_provider.dart';
 import 'providers/preferencias_provider.dart';
+import 'screens/bienvenida_screen.dart';
 import 'screens/home_shell.dart';
 import 'services/actualizacion_service.dart';
 import 'services/recordatorios_service.dart';
@@ -34,6 +35,7 @@ Future<void> main() async {
     recordatorios.programar(
       finanzas.facturas,
       activos: preferencias.recordatoriosActivos,
+      config: preferencias.configRecordatorios,
     );
   }
 
@@ -63,13 +65,17 @@ class FinzaApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final preferencias = context.watch<PreferenciasProvider>();
+
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Finza',
       theme: AppTheme.claro,
       darkTheme: AppTheme.oscuro,
-      themeMode: context.watch<PreferenciasProvider>().modoTema,
-      home: const HomeShell(),
+      themeMode: preferencias.modoTema,
+      home: preferencias.bienvenidaVista
+          ? const HomeShell()
+          : const BienvenidaScreen(),
     );
   }
 }

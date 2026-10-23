@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/factura.dart';
 import '../providers/finanzas_provider.dart';
 import '../services/sync_service.dart';
-import '../utils/formato.dart';
+import '../widgets/monto.dart';
 import '../widgets/acciones.dart';
 import '../widgets/estado_vacio.dart';
 import '../widgets/tarjeta_factura.dart';
@@ -17,7 +17,7 @@ class FacturasScreen extends StatelessWidget {
     final finanzas = context.watch<FinanzasProvider>();
 
     if (finanzas.cargando) {
-      return const Center(child: CircularProgressIndicator());
+      return const Esqueleto();
     }
 
     final facturas = finanzas.facturas;
@@ -80,7 +80,7 @@ class FacturasScreen extends StatelessWidget {
                         FittedBox(
                           fit: BoxFit.scaleDown,
                           child: Text(
-                            formatearDinero(totalPendiente),
+                            context.dinero(totalPendiente),
                             style: const TextStyle(
                               fontSize: 24,
                               fontWeight: FontWeight.bold,

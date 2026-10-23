@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../models/factura.dart';
@@ -59,6 +60,7 @@ Future<void> eliminarMovimientoConDeshacer(
   Movimiento movimiento,
 ) async {
   final finanzas = context.read<FinanzasProvider>();
+  HapticFeedback.mediumImpact();
   await finanzas.eliminarMovimiento(movimiento);
 
   if (!context.mounted) return;
@@ -77,6 +79,7 @@ Future<void> eliminarFacturaConDeshacer(
   Factura factura,
 ) async {
   final finanzas = context.read<FinanzasProvider>();
+  HapticFeedback.mediumImpact();
   await finanzas.eliminarFactura(factura);
 
   if (!context.mounted) return;
@@ -95,6 +98,7 @@ Future<void> cambiarEstadoFactura(
   Factura factura, {
   required bool pagada,
 }) async {
+  if (pagada) HapticFeedback.lightImpact();
   final siguiente = await context.read<FinanzasProvider>().cambiarEstadoFactura(
     factura,
     pagada: pagada,

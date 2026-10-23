@@ -4,12 +4,12 @@ import 'package:provider/provider.dart';
 import '../app_info.dart';
 import '../providers/finanzas_provider.dart';
 import '../providers/preferencias_provider.dart';
-import '../services/recordatorios_service.dart';
 import '../services/sync_service.dart';
 import '../utils/formato.dart';
 import '../widgets/dialogo_actualizacion.dart';
 import '../widgets/estado_sync_visual.dart';
 import 'papelera_screen.dart';
+import 'recordatorios_screen.dart';
 
 class AjustesScreen extends StatelessWidget {
   const AjustesScreen({super.key});
@@ -54,19 +54,19 @@ class AjustesScreen extends StatelessWidget {
             ),
           ),
           const _Seccion('Recordatorios'),
-          SwitchListTile(
-            secondary: const Icon(Icons.notifications_outlined),
+          ListTile(
+            leading: const Icon(Icons.notifications_outlined),
             title: const Text('Avisos de facturas'),
-            subtitle: const Text(
-              'El día antes y el día del vencimiento, a las 9:00',
+            subtitle: Text(
+              preferencias.recordatoriosActivos
+                  ? '${preferencias.configRecordatorios.descripcionDias}, '
+                        'a las ${formatearHora(preferencias.configRecordatorios.comoFecha)}'
+                  : 'Desactivados',
             ),
-            value: preferencias.recordatoriosActivos,
-            onChanged: (activos) async {
-              preferencias.recordatoriosActivos = activos;
-              if (activos) {
-                await context.read<RecordatoriosService>().pedirPermiso();
-              }
-            },
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const RecordatoriosScreen()),
+            ),
           ),
           const _Seccion('Datos'),
           ListTile(

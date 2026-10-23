@@ -5,6 +5,7 @@ import '../models/factura.dart';
 import '../models/movimiento.dart';
 import '../providers/finanzas_provider.dart';
 import '../utils/formato.dart';
+import '../widgets/monto.dart';
 import '../widgets/acciones.dart';
 import '../widgets/estado_vacio.dart';
 import '../widgets/tarjeta_movimiento.dart';
@@ -131,7 +132,7 @@ class PapeleraScreen extends StatelessWidget {
                           );
                         }
                       },
-                      child: _factura(factura),
+                      child: _factura(context, factura),
                     ),
                 ],
               ],
@@ -143,7 +144,7 @@ class PapeleraScreen extends StatelessWidget {
     return TarjetaMovimiento(movimiento: movimiento);
   }
 
-  Widget _factura(Factura factura) {
+  Widget _factura(BuildContext context, Factura factura) {
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
@@ -156,7 +157,7 @@ class PapeleraScreen extends StatelessWidget {
           '${factura.categoria} • Vence ${formatearFecha(factura.fechaVencimiento)}',
         ),
         trailing: Text(
-          formatearDinero(factura.monto),
+          context.dinero(factura.monto),
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
       ),

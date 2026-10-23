@@ -117,10 +117,25 @@ borrado también llega a los otros celulares.
 -   Ajustes: sincronización, tema (sistema, claro, oscuro), recordatorios,
     papelera, versión y buscar actualizaciones.
 -   Colores de ingreso, gasto y alerta adaptados a modo oscuro (`ColoresFinza`).
+-   Bienvenida de tres pantallas la primera vez (`BienvenidaScreen`,
+    preferencia `bienvenida_vista`).
+-   Ojo en la barra superior para ocultar los montos (`context.dinero()` en
+    `widgets/monto.dart`; en callbacks se usa `formatearDinero`).
+-   Montos que cambian con animación (`MontoAnimado`), esqueleto mientras
+    carga, vibración corta al guardar, eliminar y pagar.
+-   Periodo compartido por Inicio y Estadísticas (`models/periodo.dart`,
+    `SelectorPeriodo`): mes, año, rango de meses, rango de fechas o todo.
+    Mes y año se guardan como "el actual"; los rangos, con sus fechas.
 
 ### Movimientos
 
--   Crear, editar y eliminar (a la papelera, con "Deshacer").
+-   Crear, editar y eliminar (a la papelera, con "Deshacer"), también
+    deslizando a la izquierda (`ListaMovimientos`).
+-   Formulario rápido: Gasto por defecto, monto con autofoco y separador
+    de miles al escribir (`FormateadorMonto`), categorías como chips con
+    ícono (`Categorias.icono`), descripción opcional (si falta, se usa la
+    categoría).
+-   Lista agrupada por día con el balance del día (si se ordena por fecha).
 -   Fecha elegible: ya no es siempre la de hoy.
 -   Búsqueda, filtro por tipo y bottom sheet de filtros: periodo,
     categorías y orden. Los filtros se guardan.
@@ -128,7 +143,12 @@ borrado también llega a los otros celulares.
 
 ### Estadísticas
 
--   Totales, saldo, porcentaje de ingresos vs. gastos y gastos por categoría.
+-   Del periodo elegido: ingresos, gastos, "Gastaste el X % de lo que
+    ganaste", comparación con el periodo anterior y categorías que más
+    crecieron (`utils/estadisticas.dart`).
+-   Dona de gastos por categoría y barras de los últimos 6 meses
+    (`widgets/graficas.dart`, con `CustomPainter`, sin paquetes extra).
+    Tocar una categoría abre Movimientos filtrado por ella y el periodo.
 
 ### Facturas
 
@@ -136,7 +156,11 @@ borrado también llega a los otros celulares.
 -   Chip de estado tocable (Pendiente o Pagada) y botón "Marcar pagada".
 -   Recurrentes: al pagarla se crea la del siguiente periodo.
 -   Estados visuales calculados: Pagada, Vencida, Vence hoy, Próxima y Pendiente.
--   Recordatorios el día antes y el día del vencimiento a las 9:00.
+-   Recordatorios configurables (`ConfigRecordatorios`, pantalla
+    `RecordatoriosScreen`): hora, días de anticipación (varios a la vez) y
+    aviso diario durante 7 días si se vence. Muestra los próximos avisos y
+    tiene "Probar notificación". Por defecto: el día antes y el mismo día
+    a las 9:00.
 -   Banner al abrir la app si hay facturas vencidas o que vencen hoy.
 
 ### Papelera
@@ -169,8 +193,9 @@ borrado también llega a los otros celulares.
 
 ### Moneda
 
-Formato colombiano: punto para miles y coma para decimales. Ejemplos:
-`$15.000,00`, `$1.500.000,50`, `$25.000,75`.
+Formato colombiano: punto para miles y coma para decimales; los centavos
+solo se muestran si los hay. Ejemplos: `$15.000`, `$1.500.000,50`,
+`$25.000,75`.
 
 ## Incidencias resueltas
 
@@ -195,9 +220,11 @@ Formato colombiano: punto para miles y coma para decimales. Ejemplos:
 **Hecho en octubre de 2026:** reorganización por carpetas, CRUD completo
 de movimientos y facturas, papelera, filtros, facturas recurrentes,
 recordatorios, tema oscuro, sincronización con Drive y actualizaciones
-desde el repo privado, modo sin conexión con reintentos. `flutter analyze`
-está limpio y hay 48 pruebas
-automáticas (`flutter test`).
+desde el repo privado, modo sin conexión con reintentos. Después:
+selector de periodo, estadísticas con gráficas, formulario rápido, lista
+agrupada por día con deslizar para eliminar, avisos configurables,
+ocultar montos y bienvenida. `flutter analyze` está limpio y hay 76
+pruebas automáticas (`flutter test`).
 
 **Falta probar en el teléfono:** compilar el APK, el login con Google y la
 sincronización real, las notificaciones y la instalación de una
@@ -209,8 +236,8 @@ Android y Web), crear el token de GitHub y llenar `finza_config.json`.
 
 Próximos pasos sugeridos:
 
-1.  Metas de ahorro y presupuestos por categoría.
-2.  Selector de periodo en Estadísticas.
+1.  Presupuestos por categoría y varias cuentas o bolsillos.
+2.  Metas de ahorro.
 3.  Al pagar una factura, ofrecer registrarla como gasto.
 
 ## Comandos útiles

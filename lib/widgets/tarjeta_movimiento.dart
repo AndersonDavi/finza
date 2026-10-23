@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../models/categorias.dart';
 import '../models/movimiento.dart';
 import '../theme/app_theme.dart';
 import '../utils/formato.dart';
+import 'monto.dart';
 
 /// Fila de un movimiento. La usan Inicio, Movimientos y la Papelera.
 class TarjetaMovimiento extends StatelessWidget {
@@ -11,6 +13,7 @@ class TarjetaMovimiento extends StatelessWidget {
     required this.movimiento,
     this.onTap,
     this.trailing,
+    this.mostrarFecha = true,
   });
 
   final Movimiento movimiento;
@@ -18,6 +21,9 @@ class TarjetaMovimiento extends StatelessWidget {
 
   /// Reemplaza el monto a la derecha (la Papelera pone sus botones acá).
   final Widget? trailing;
+
+  /// En las listas agrupadas por día la fecha ya está en el encabezado.
+  final bool mostrarFecha;
 
   @override
   Widget build(BuildContext context) {
@@ -31,9 +37,7 @@ class TarjetaMovimiento extends StatelessWidget {
         leading: CircleAvatar(
           backgroundColor: color.withValues(alpha: 0.15),
           foregroundColor: color,
-          child: Icon(
-            movimiento.esIngreso ? Icons.arrow_downward : Icons.arrow_upward,
-          ),
+          child: Icon(Categorias.icono(movimiento.categoria)),
         ),
         title: Text(
           movimiento.descripcion,
@@ -42,12 +46,17 @@ class TarjetaMovimiento extends StatelessWidget {
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         subtitle: Text(
-          '${movimiento.categoria} • ${formatearFecha(movimiento.fecha)}',
+          mostrarFecha
+              ? '${movimiento.categoria} • ${formatearFecha(movimiento.fecha)}'
+              : movimiento.categoria,
         ),
         trailing:
             trailing ??
             Text(
-              '${movimiento.esIngreso ? '+' : '-'}${formatearDinero(movimiento.monto)}',
+              context.dinero(
+                movimiento.esIngreso ? movimiento.monto : -movimiento.monto,
+                conSigno: true,
+              ),
               style: TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 15,

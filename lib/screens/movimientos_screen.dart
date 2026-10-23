@@ -7,11 +7,10 @@ import '../providers/finanzas_provider.dart';
 import '../providers/preferencias_provider.dart';
 import '../services/sync_service.dart';
 import '../theme/app_theme.dart';
-import '../utils/formato.dart';
-import '../widgets/acciones.dart';
 import '../widgets/estado_vacio.dart';
 import '../widgets/filtros_movimientos_sheet.dart';
-import '../widgets/tarjeta_movimiento.dart';
+import '../widgets/lista_movimientos.dart';
+import '../widgets/monto.dart';
 
 class MovimientosScreen extends StatefulWidget {
   const MovimientosScreen({super.key});
@@ -60,9 +59,7 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
     final preferencias = context.watch<PreferenciasProvider>();
     final filtro = preferencias.filtroMovimientos;
 
-    if (finanzas.cargando) {
-      return const Center(child: CircularProgressIndicator());
-    }
+    if (finanzas.cargando) return const Esqueleto();
 
     final filtrados = filtro.aplicar(finanzas.movimientos, busqueda: _busqueda);
     final balance = filtrados.fold<double>(
@@ -145,7 +142,7 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
                         ),
                       ),
                       Text(
-                        formatearDinero(balance),
+                        context.dinero(balance),
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           color: balance < 0
@@ -188,18 +185,13 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
                             ),
                     ],
                   )
-                : ListView.builder(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
-                    itemCount: filtrados.length,
-                    itemBuilder: (context, index) {
-                      final movimiento = filtrados[index];
-                      return TarjetaMovimiento(
-                        movimiento: movimiento,
-                        onTap: () =>
-                            mostrarOpcionesMovimiento(context, movimiento),
-                      );
-                    },
+                : ListaMovimientos(
+                    movimientos: filtrados,
+                    // Agrupar por día solo si están ordenados por fecha.
+                    agrupar:
+                        filtro.orden == OrdenMovimientos.fechaDesc ||
+                        filtro.orden == OrdenMovimientos.fechaAsc,
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
                   ),
           ),
         ),

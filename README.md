@@ -19,19 +19,24 @@ Contexto del proyecto (decisiones, incidencias, próximos pasos):
 [`Contexto_Finza.md`](Contexto_Finza.md).
 
 ## Funcionalidades
-- **Inicio:** saldo, ingresos, gastos, aviso de facturas por vencer y movimientos recientes.
+- **Bienvenida:** la primera vez, tres pantallas: qué hace la app, conectar Drive (opcional) y activar los avisos.
+- **Periodos:** Inicio y Estadísticas muestran un mes (con flechas ‹ ›), un año, un rango de meses, un rango de fechas o todo el historial.
+- **Inicio:** balance del periodo con sus ingresos y gastos, saldo total, aviso de facturas por vencer y movimientos recientes.
 - **Movimientos:**
-  - crear, **editar** y eliminar ingresos y gastos, **con fecha elegible**;
+  - registro rápido: arranca en Gasto con el teclado abierto en el monto (los miles se separan solos), categorías con ícono de un toque y descripción opcional;
+  - crear, **editar** y eliminar ingresos y gastos, **con fecha elegible**; deslizar a la izquierda para eliminar;
+  - lista agrupada por día (Hoy, Ayer, Lun 20 oct) con el balance de cada día;
   - búsqueda por descripción o categoría;
   - filtros por tipo, **periodo** (este mes, mes pasado, últimos 3 meses o un rango), **categorías** y **orden**; se guardan al cerrar la app.
-- **Estadísticas:** totales, saldo, ingresos vs. gastos y gastos por categoría.
+- **Estadísticas:** cuánto de lo que entró se gastó, comparación con el periodo anterior y categorías que más crecieron, dona de gastos por categoría (tocar una abre sus movimientos) y barras de los últimos 6 meses.
 - **Facturas:**
   - crear, **editar** y **eliminar**;
   - estados según la fecha: *Vencida*, *Vence hoy*, *Próxima* (3 días) y *Pendiente*;
   - chip de estado tocable para marcar pagada o pendiente;
   - **recurrentes:** al pagarla se crea sola la del siguiente periodo (semanal, mensual, trimestral o anual).
 - **Papelera:** lo eliminado queda 30 días para restaurarlo; al eliminar aparece "Deshacer".
-- **Recordatorios:** notificación el día antes y el día del vencimiento de cada factura, a las 9:00. Banner al abrir la app si hay facturas vencidas o que vencen hoy.
+- **Recordatorios:** en Ajustes > Avisos de facturas se elige la hora, con cuántos días de anticipación avisar (el mismo día, 1, 2, 3, 5, 7 o 15 días antes, varios a la vez) y si seguir avisando a diario cuando se vence. Muestra los próximos avisos y tiene **Probar notificación**. Banner al abrir la app si hay facturas vencidas o que vencen hoy.
+- **Ocultar montos:** el ojo de la barra superior cambia los montos por `$ ••••`.
 - **Sincronización con Google Drive:** respaldo automático y los mismos datos en varios celulares. **Funciona sin conexión:** si no hay internet o Drive no responde, todo queda guardado en el teléfono como pendiente y se sube solo cuando vuelve el servicio (reintentos automáticos y al recuperar la red).
 - **Tema claro y oscuro** (o el del sistema).
 - **Actualizaciones:** al abrir, la app revisa si hay una versión nueva en este repo, la descarga, verifica que esté completa y abre el instalador.

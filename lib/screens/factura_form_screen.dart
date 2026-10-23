@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../models/categorias.dart';
@@ -97,6 +98,7 @@ class _FacturaFormScreenState extends State<FacturaFormScreen> {
       ),
     );
 
+    HapticFeedback.lightImpact();
     if (!mounted) return;
     Navigator.of(context).pop(true);
   }
@@ -125,14 +127,19 @@ class _FacturaFormScreenState extends State<FacturaFormScreen> {
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
                 initialValue: _categoria,
-                decoration: const InputDecoration(
-                  labelText: 'Categoría',
-                  prefixIcon: Icon(Icons.category_outlined),
-                ),
+                decoration: const InputDecoration(labelText: 'Categoría'),
                 items: {...Categorias.facturas, _categoria}
                     .map(
-                      (item) =>
-                          DropdownMenuItem(value: item, child: Text(item)),
+                      (item) => DropdownMenuItem(
+                        value: item,
+                        child: Row(
+                          children: [
+                            Icon(Categorias.icono(item), size: 20),
+                            const SizedBox(width: 10),
+                            Text(item),
+                          ],
+                        ),
+                      ),
                     )
                     .toList(),
                 onChanged: (valor) {
@@ -145,9 +152,10 @@ class _FacturaFormScreenState extends State<FacturaFormScreen> {
                 keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
+                inputFormatters: [FormateadorMonto()],
                 decoration: const InputDecoration(
                   labelText: 'Monto',
-                  hintText: 'Ej. 80000',
+                  hintText: 'Ej. 80.000',
                   prefixText: '\$ ',
                 ),
               ),
@@ -202,11 +210,6 @@ class _FacturaFormScreenState extends State<FacturaFormScreen> {
                 onPressed: _guardando ? null : _guardar,
                 icon: const Icon(Icons.save),
                 label: Text(_editando ? 'Guardar cambios' : 'Guardar factura'),
-              ),
-              const SizedBox(height: 12),
-              OutlinedButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('Cancelar'),
               ),
             ],
           ),
